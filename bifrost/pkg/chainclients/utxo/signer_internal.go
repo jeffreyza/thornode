@@ -12,6 +12,7 @@ import (
 	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
 	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/eager7/dogutil"
@@ -353,6 +354,12 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
 		return dashtxscript.PayToAddrScript(addr)
+	case common.PIVXChain:
+		addr, err := pivxutil.DecodeAddress(sourceAddr.String(), c.getChainCfgPIVX())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
+		}
+		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
 		addr, err := zcash.DecodeAddress(sourceAddr.String(), params.Name)
@@ -470,7 +477,7 @@ func (c *Client) isSegwitChain() bool {
 	switch c.cfg.ChainID {
 	case common.BTCChain, common.LTCChain:
 		return true
-	case common.DOGEChain, common.BCHChain, common.ZECChain, common.DASHChain:
+	case common.DOGEChain, common.BCHChain, common.ZECChain, common.DASHChain, common.PIVXChain:
 		return false
 	default:
 		c.log.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
@@ -616,6 +623,22 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		// NONSTANDARD. getMemo on the observer side already handles the P2PKH
 		// overflow shape (client_internal.go: pubkeyhash scriptType branch).
 		nullDataScripts, err = MemoToScripts(tx.Memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to build memo scripts: %w", err)
+		}
+	case common.PIVXChain:
+		var outputAddr btcutil.Address
+		outputAddr, err = pivxutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgPIVX())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode destination address: %w", err)
+		}
+		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to build payment script: %w", err)
+		}
+		// PIVX has no segwit. Memos longer than 80 bytes continue in P2PKH-shaped
+		// outputs, the same shape getMemo already accepts.
+		nullDataScripts, err = MemoToScripts(tx.Memo, pivxutil.MaxDataCarrierBytes, btctxscript.NullDataScript, payToPIVXPubKeyHashMemoScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to build memo scripts: %w", err)
 		}
@@ -811,7 +834,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 // It only vetoes the transaction; it never raises a fee beyond its assigned budget.
 func (c *Client) validateRelayFee(fee uint64, vSize int64) error {
 	switch c.cfg.ChainID {
-	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.DASHChain:
+	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.DASHChain, common.PIVXChain:
 		// These chains express the daemon's relay fee per 1,000 bytes/vbytes.
 	default:
 		// ZEC has separate ZIP-317 fee handling.

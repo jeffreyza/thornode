@@ -26,6 +26,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"golang.org/x/crypto/blake2b"
 
@@ -275,6 +276,23 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			net = &dashchaincfg.MainNetParams
 		}
 		addr, err := dashbtcutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		if err != nil {
+			return NoAddress, fmt.Errorf("failed to encode the address, err: %w", err)
+		}
+		addressString = addr.String()
+	case PIVXChain:
+		pk, err := p.Decode()
+		if err != nil {
+			return NoAddress, err
+		}
+		var net *chaincfg.Params
+		switch chainNetwork {
+		case MockNet:
+			net = pivxutil.RegressionNetParams()
+		case MainNet, StageNet, ChainNet:
+			net = pivxutil.MainNetParams()
+		}
+		addr, err := btcutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
 		if err != nil {
 			return NoAddress, fmt.Errorf("failed to encode the address, err: %w", err)
 		}

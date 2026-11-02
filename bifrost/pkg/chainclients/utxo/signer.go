@@ -17,6 +17,7 @@ import (
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -172,6 +173,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to decode destination address: %w", err)
 		}
 		outputAddrStr = outputAddr.String()
+	case common.PIVXChain:
+		outputAddr, err = pivxutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgPIVX())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to decode destination address: %w", err)
+		}
+		outputAddrStr = outputAddr.String()
 	case common.ZECChain:
 		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
@@ -322,6 +329,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		stx = wireToBTC(redeemTx)
 	case common.DASHChain:
 		dashTx = wireToDASH(redeemTx)
+	case common.PIVXChain:
+		if redeemTx.Version != 1 || redeemTx.HasWitness() {
+			return nil, checkpointBytes, nil, fmt.Errorf("PIVX outbound must be a legacy version-1 transaction")
+		}
 	case common.ZECChain:
 		// signing is slightly different, using zecTx, no need to wire
 	default:
@@ -381,6 +392,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	var dashPrevOutputs []*dashwire.TxOut
 	var dashSignatureHashes, dashSignatureScripts [][]byte
+	var pivxPrevOutputs []*btcwire.TxOut
+	var pivxSignatureHashes, pivxSignatureScripts [][]byte
 	if c.cfg.ChainID == common.DASHChain {
 		dashPrevOutputs = make([]*dashwire.TxOut, len(signings))
 		for i, signing := range signings {
@@ -391,6 +404,17 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, checkpointBytes, nil, err
 		}
 		dashSignatureScripts = make([][]byte, len(signings))
+	}
+	if c.cfg.ChainID == common.PIVXChain {
+		pivxPrevOutputs = make([]*btcwire.TxOut, len(signings))
+		for i, signing := range signings {
+			pivxPrevOutputs[i] = btcwire.NewTxOut(signing.amount, sourceScript)
+		}
+		pivxSignatureHashes, err = pivxutil.SignatureHashes(redeemTx, pivxPrevOutputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+		pivxSignatureScripts = make([][]byte, len(signings))
 	}
 
 	// sign the tx
@@ -436,6 +460,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.DASHChain:
 				dashSignatureScripts[i], signErr = c.signUTXODASH(dashSignatureHashes[i], tx, thorchainHeight)
+			case common.PIVXChain:
+				pivxSignatureScripts[i], signErr = c.signUTXOPIVX(pivxSignatureHashes[i], tx, thorchainHeight)
 			case common.ZECChain:
 				signErr = c.signUTXOZEC(zecTx, zecHashes, tx, i, thorchainHeight)
 			default:
@@ -487,6 +513,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 	}
 
+	if c.cfg.ChainID == common.PIVXChain {
+		for i, script := range pivxSignatureScripts {
+			redeemTx.TxIn[i].SignatureScript = script
+		}
+		err = pivxutil.VerifyTransaction(redeemTx, pivxPrevOutputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+	}
+
 	if c.cfg.ChainID == common.ZECChain {
 		// TSS may span the expiry boundary. Check again before creating an
 		// observation or reserving inputs for a transaction that cannot be mined.
@@ -534,6 +570,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		redeemTx = btcToWire(msgTx)
 	case common.DASHChain:
 		redeemTx = dashToWire(dashTx)
+	case common.PIVXChain:
+		// Signed in place on the Bitcoin-compatible legacy transaction.
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:
@@ -802,8 +840,8 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 		var maxFee any
 		switch c.cfg.ChainID {
-		case common.DOGEChain, common.BCHChain:
-			maxFee = true // "allowHighFees"
+		case common.DOGEChain, common.BCHChain, common.PIVXChain:
+			maxFee = true // "allowHighFees" (pivxd rejects a numeric maxfeerate)
 		case common.LTCChain, common.BTCChain, common.DASHChain:
 			maxFee = broadcastMaxFeeRate
 		}

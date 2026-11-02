@@ -20,6 +20,7 @@ import (
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -207,6 +208,22 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 		return true
 	}
 	for _, tx := range blockMeta.SelfTransactions {
+		if c.cfg.ChainID.Equals(common.PIVXChain) {
+			// pivxd has no getmempoolentry. A missing method must not look like
+			// "not in mempool" and drop a block that still has a vault tx pending.
+			ids, err := c.rpc.GetRawMempool()
+			if err != nil {
+				c.log.Warn().Err(err).Msg("fail to read PIVX mempool, keeping block meta")
+				return false
+			}
+			for _, id := range ids {
+				if strings.EqualFold(id, tx) {
+					c.log.Info().Str("txid", tx).Msg("still in mempool, block cannot be deleted")
+					return false
+				}
+			}
+			continue
+		}
 		if result, err := c.rpc.GetMempoolEntry(tx); err == nil && result != nil {
 			c.log.Info().Str("txid", tx).Msg("still in mempool, block cannot be deleted")
 			return false
@@ -238,6 +255,12 @@ func (c *Client) updateNetworkInfo() {
 	if c.cfg.ChainID.Equals(common.BTCChain) {
 		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
 		return
+	}
+	// pivxd's estimatesmartfee is deprecated and often -1. Pin the relay floor
+	// before the RPC so a getnetworkinfo failure cannot leave outbound fees at 0.
+	// 10000 sat/KB is CFeeRate minRelayTxFee in src/validation.cpp.
+	if c.cfg.ChainID.Equals(common.PIVXChain) {
+		c.minRelayFeeSats.Store(10_000)
 	}
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
@@ -524,6 +547,8 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		default:
 			return len(addresses) == 1 && requireSigs == 1
 		}
+	case common.PIVXChain:
+		return c.isValidUTXOPIVX(buf)
 
 	default:
 		c.log.Fatal().Msg("unsupported chain")
@@ -798,6 +823,9 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 // ignoreTx checks if we can already ignore a tx according to preset rules
 // Allow up to 10 Vouts with value and 2 OP_RETURN Vouts (for getMemo appending).
 func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
+	if c.cfg.ChainID.Equals(common.PIVXChain) && pivxutil.SkipTx(tx) {
+		return true
+	}
 	if len(tx.Vin) == 0 || len(tx.Vout) == 0 || len(tx.Vout) > 12 {
 		return true
 	}
@@ -839,6 +867,9 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 	isSenderAsgard := c.isAsgardAddress(sender)
 	for _, vout := range tx.Vout {
 		if strings.EqualFold(vout.ScriptPubKey.Type, "nulldata") {
+			continue
+		}
+		if c.cfg.ChainID.Equals(common.PIVXChain) && pivxutil.IsRejectedOutputScript(vout.ScriptPubKey.Hex) {
 			continue
 		}
 		// analyze-ignore(float-comparison)
@@ -958,6 +989,9 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 		// back to local script parsing — same pattern as BTC above.
 		return c.getAddressesFromScriptPubKeyDASH(scriptPubKey)
 	}
+	if c.cfg.ChainID.Equals(common.PIVXChain) {
+		return c.getAddressesFromScriptPubKeyPIVX(scriptPubKey)
+	}
 	return scriptPubKey.Addresses
 }
 
@@ -1002,7 +1036,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			asm, err = ltctxscript.DisasmString(buf)
 		case common.DASHChain:
 			asm, err = dashtxscript.DisasmString(buf)
-		case common.BTCChain, common.ZECChain:
+		case common.BTCChain, common.ZECChain, common.PIVXChain:
 			asm, err = btctxscript.DisasmString(buf)
 		default:
 			c.log.Fatal().Msg("unsupported chain")
@@ -1178,6 +1212,11 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 }
 
 func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
+	if c.cfg.ChainID.Equals(common.PIVXChain) {
+		// Coinstake outputs include the staked principal plus masternode and
+		// budget payouts. Confirmation math uses the scheduled subsidy only.
+		return c.pivxBlockSubsidySats(blockHeight), nil
+	}
 	hash, err := c.rpc.GetBlockHash(blockHeight)
 	if err != nil {
 		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)

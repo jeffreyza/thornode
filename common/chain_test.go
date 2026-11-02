@@ -168,4 +168,13 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 
 	c.Assert(DASHChain.MaxMemoLength() > 0, Equals, true)
 	c.Assert(DASHChain.ApproximateBlockMilliseconds(), Equals, int64(150_000))
+
+	c.Assert(PIVXChain.IsUTXO(), Equals, true)
+	c.Assert(PIVXChain.GetGasAsset(), Equals, PIVXAsset)
+	c.Assert(PIVXChain.DustThreshold().Equal(cosmos.NewUint(10_000)), Equals, true)
+	c.Assert(PIVXChain.P2WPKHOutputValue(), Equals, int64(5460))
+	c.Assert(PIVXChain.DefaultCoinbase(), Equals, float64(10))
+	c.Assert(PIVXChain.ApproximateBlockMilliseconds(), Equals, int64(60_000))
+	c.Assert(PIVXChain.AddressPrefix(MainNet), Equals, "D")
+	c.Assert(PIVXChain.MaxMemoLength(), Equals, 80)
 }

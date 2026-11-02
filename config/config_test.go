@@ -230,6 +230,7 @@ func (Test) TestInitBifrost(c *C) {
 	config.Bifrost.Chains.SUI.BlockScanner.DBPath = filepath.Join(tmpDir, "sui")
 	config.Bifrost.Chains.ADA.BlockScanner.DBPath = filepath.Join(tmpDir, "ada")
 	config.Bifrost.Chains.DASH.BlockScanner.DBPath = filepath.Join(tmpDir, "dash")
+	config.Bifrost.Chains.PIVX.BlockScanner.DBPath = filepath.Join(tmpDir, "pivx")
 
 	// Clear bootstrap peers so it uses getSeedAddrs (returns empty in mocknet)
 	config.Bifrost.TSS.BootstrapPeers = nil

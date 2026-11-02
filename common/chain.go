@@ -37,6 +37,7 @@ const (
 	TAOChain   = Chain("TAO")
 	DOTChain   = Chain("DOT")
 	DASHChain  = Chain("DASH")
+	PIVXChain  = Chain("PIVX")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -63,6 +64,7 @@ var AllChains = [...]Chain{
 	TAOChain,
 	DOTChain,
 	DASHChain,
+	PIVXChain,
 }
 
 type SigningAlgo string
@@ -157,7 +159,7 @@ func GetSubstrateChains() []Chain {
 
 // GetUTXOChains returns all "UTXO" chains connected to THORChain.
 func GetUTXOChains() []Chain {
-	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain}
+	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain, PIVXChain}
 }
 
 // IsEVM returns true if given chain is an EVM chain.
@@ -257,6 +259,8 @@ func (c Chain) GetGasAsset() Asset {
 		return XMRAsset
 	case DASHChain:
 		return DASHAsset
+	case PIVXChain:
+		return PIVXAsset
 	case POLChain:
 		return POLAsset
 	case SUIChain:
@@ -285,7 +289,7 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "drop", cosmos.NewUint(1e6)
 	case TRONChain:
 		return "sun", cosmos.NewUint(1e6)
-	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain, DASHChain:
+	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain, DASHChain, PIVXChain:
 		return "satsperbyte", cosmos.NewUint(1e8)
 	case ETHChain, BSCChain, POLChain:
 		return "gwei", cosmos.NewUint(1e9)
@@ -393,6 +397,16 @@ func (c Chain) RequiresExplicitRefundAddress() bool {
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {
+	if c.Equals(PIVXChain) {
+		if !IsValidPIVXAddress(addr.String()) {
+			return false
+		}
+		network := addr.GetNetwork(PIVXChain)
+		if CurrentChainNetwork == MockNet {
+			return network == MockNet
+		}
+		return network != MockNet
+	}
 	if c.Equals(XMRChain) {
 		if !IsValidXMRAddress(addr.String()) {
 			return false
@@ -452,6 +466,10 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DASHChain:
 			// Dash regtest/devnet P2PKH prefix byte is 0x8c → base58 starts with "y".
 			return "y"
+		case PIVXChain:
+			// Regtest P2PKH (version 139) starts with "x" or "y". Vault checks use
+			// IsValidPIVXAddress, not this prefix.
+			return "x"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -476,6 +494,9 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DASHChain:
 			// Dash mainnet P2PKH prefix byte is 0x4c → base58 starts with "X".
 			return "X"
+		case PIVXChain:
+			// Mainnet P2PKH version byte 30. The leading character is "D".
+			return "D"
 		}
 	}
 	return ""
@@ -500,6 +521,10 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	case DOGEChain:
 		return cosmos.NewUint(100_000_000)
 	case DASHChain:
+		return cosmos.NewUint(10_000)
+	case PIVXChain:
+		// Relay dust is 5460 sats (DUST_RELAY_TX_FEE 30000 sat/KB over a 182-byte
+		// spend). 10000 sats sits above that and matches the wallet min fee.
 		return cosmos.NewUint(10_000)
 	case ETHChain, BASEChain:
 		return cosmos.NewUint(1_000)
@@ -564,6 +589,10 @@ func (c Chain) P2WPKHOutputValue() int64 {
 		// P2WPKH-aware 294 sats used for BTCChain above. Value follows Bitcoin
 		// Core's policy.cpp dust calculation, which dashd 23 inherits verbatim.
 		return 546
+	case PIVXChain:
+		// No segwit. Dust threshold for a standard P2PKH output at
+		// DUST_RELAY_TX_FEE (30000 sat/KB) over 182 bytes is 5460 sats.
+		return 5460
 	default:
 		return 0 // unsupported chain
 	}
@@ -572,7 +601,7 @@ func (c Chain) P2WPKHOutputValue() int64 {
 // MaxMemoLength returns the max memo length for each chain.
 func (c Chain) MaxMemoLength() int {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain:
+	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain, PIVXChain:
 		return constants.MaxOpReturnDataSize
 	default:
 		// Default to the max memo size that we will process, regardless
@@ -602,6 +631,11 @@ func (c Chain) DefaultCoinbase() float64 {
 		// Retained fallback; currently unused by Dash fee reporting,
 		// confirmation counting and quotes.
 		return 1.55
+	case PIVXChain:
+		// Post-v5.5 mainnet subsidy, in whole coins. Confirmation counting uses
+		// the height schedule in pivxutil.BlockSubsidySats instead of this
+		// constant; coinstake outputs must not be substituted for it.
+		return 10
 	default:
 		return 0
 	}
@@ -677,6 +711,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 120_000
 	case DASHChain:
 		return 150_000 // ~2.5 minutes
+	case PIVXChain:
+		return 60_000 // 1 minute target spacing
 	case POLChain:
 		return 2_000
 	case SUIChain:
@@ -694,6 +730,8 @@ func (c Chain) InboundNotes() string {
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats. MWEB addresses are not supported; do not use ltcmweb1 addresses or peg-in transactions."
 	case BTCChain, BCHChain, DOGEChain, ZECChain, DASHChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats."
+	case PIVXChain:
+		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use shielded Sapling deposits, cold-staking (P2CS) outputs, staking addresses (S or W), or exchange addresses (EXM or EXT). Outbounds are legacy transparent version-1 transactions."
 	case ETHChain, AVAXChain, BSCChain, BASEChain, POLChain:
 		return "Base Asset: Send the inbound_address the asset with the memo encoded in hex in the data field. Tokens: First approve router to spend tokens from user: asset.approve(router, amount). Then call router.depositWithExpiry(inbound_address, asset, amount, memo, expiry). Asset is the token contract address. Amount should be in native asset decimals (eg 1e18 for most tokens). Do not swap to smart contract addresses."
 	case GAIAChain, NOBLEChain:
@@ -717,6 +755,8 @@ func (c Chain) OutboundNotes() string {
 		return "Ensure XRP destination address does not have special flags like lsfRequireDestTag, lsfRequireAuth, lsfDisallowIncomingPayChan, etcetera."
 	case LTCChain:
 		return "Do not use MWEB (ltcmweb1) addresses as the destination; they are not supported."
+	case PIVXChain:
+		return "Do not use staking (S or W) or exchange (EXM or EXT) addresses as the destination; they are rejected."
 	default:
 		return ""
 	}

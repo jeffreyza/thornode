@@ -36,9 +36,16 @@ func (s *AddressSuite) TestMocknetAddress(c *C) {
 		c.Assert(addr.IsChain(chain), Equals, false)
 	}
 
-	// DOGE mainnet address, invalid on mocknet
-	_, err = NewAddress("DJbKker23xfz3ufxAbqUuQwp1EBibGJJHu")
-	c.Assert(err, NotNil)
+	// DOGE mainnet P2PKH uses version byte 30, the same byte as PIVX mainnet,
+	// so the string is a valid address. It is not a current-network destination
+	// for either chain on mocknet.
+	addr, err = NewAddress("DJbKker23xfz3ufxAbqUuQwp1EBibGJJHu")
+	c.Assert(err, IsNil)
+	c.Assert(addr.IsChain(DOGEChain), Equals, true)
+	c.Assert(addr.IsChain(PIVXChain), Equals, true)
+	c.Assert(addr.GetNetwork(DOGEChain), Equals, MainNet)
+	c.Assert(addr.IsCurrentNetwork(DOGEChain), Equals, false)
+	c.Assert(addr.IsCurrentNetwork(PIVXChain), Equals, false)
 }
 
 func (s *AddressSuite) TestToTexConversion(c *C) {

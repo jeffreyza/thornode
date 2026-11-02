@@ -574,6 +574,8 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		switch c.cfg.ChainID {
 		case common.DOGEChain, common.ZECChain:
 			err = c.sendNetworkFeeFromBlock(block)
+		case common.PIVXChain:
+			err = c.sendNetworkFeePIVX(height)
 		case common.BCHChain, common.LTCChain, common.BTCChain, common.DASHChain:
 			err = c.sendNetworkFee(height)
 		default:
@@ -901,7 +903,7 @@ func (c *Client) shouldReportSolvency(height int64) bool {
 	}
 
 	switch c.cfg.ChainID {
-	case common.DOGEChain, common.ZECChain:
+	case common.DOGEChain, common.ZECChain, common.PIVXChain:
 		return height%10 == 0
 	case common.BCHChain, common.BTCChain:
 		return true
