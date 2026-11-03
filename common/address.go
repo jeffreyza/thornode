@@ -22,6 +22,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
@@ -107,6 +108,10 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	if IsValidPIVXAddress(address) {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
 }
@@ -117,6 +122,18 @@ func NewAddress(address string) (Address, error) {
 // pubkey hex (compressed or uncompressed, 66 / 130 chars) is rejected because
 // btcutil.DecodeAddress accepts those as P2PK for the caller's defaultNet, but
 // THORChain treats them as non-addresses across all chains.
+// IsValidPIVXAddress returns true for a mainnet or regtest/testnet P2PKH or
+// P2SH address. Staking and exchange addresses are rejected. Mainnet P2PKH
+// uses version byte 30, the same byte as Dogecoin, so a string can be both.
+func IsValidPIVXAddress(address string) bool {
+	for _, params := range []*chaincfg.Params{pivxutil.MainNetParams(), pivxutil.RegressionNetParams()} {
+		if _, err := pivxutil.DecodeAddress(address, params); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func IsValidDASHAddress(address string) bool {
 	for _, params := range []*dashchaincfg.Params{&dashchaincfg.MainNetParams, &dashchaincfg.RegressionNetParams} {
 		_, err := dashutil.DecodeAddress(address, params)
@@ -389,6 +406,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return IsValidADAAddress(addr.String())
 	case DASHChain:
 		return IsValidDASHAddress(addr.String())
+	case PIVXChain:
+		return IsValidPIVXAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -397,7 +416,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain, DASHChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain, DASHChain, PIVXChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -410,6 +429,19 @@ func (addr Address) GetChain() Chain {
 func (addr Address) IsCurrentNetwork(chain Chain) bool {
 	if chain.Equals(ZECChain) {
 		_, err := zcash.DecodeAddress(addr.String(), ZECNetworkName())
+		return err == nil
+	}
+	if chain.Equals(PIVXChain) {
+		var params *chaincfg.Params
+		switch CurrentChainNetwork {
+		case MockNet:
+			params = pivxutil.RegressionNetParams()
+		case MainNet, StageNet, ChainNet:
+			params = pivxutil.MainNetParams()
+		default:
+			return false
+		}
+		_, err := pivxutil.DecodeAddress(addr.String(), params)
 		return err == nil
 	}
 	if chain.Equals(DASHChain) {
@@ -575,6 +607,15 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 
 		if strings.HasPrefix(addrStr, "addr_test1") {
+			return MockNet
+		}
+	case PIVXChain:
+		_, err := pivxutil.DecodeAddress(addr.String(), pivxutil.MainNetParams())
+		if err == nil {
+			return mainNetPredicate()
+		}
+		_, err = pivxutil.DecodeAddress(addr.String(), pivxutil.RegressionNetParams())
+		if err == nil {
 			return MockNet
 		}
 	case DASHChain:

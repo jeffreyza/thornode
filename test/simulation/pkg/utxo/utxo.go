@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/pivxutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -258,9 +259,9 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
-	case common.DASHChain:
-		// Dash tx format is Bitcoin-compatible (legacy, non-SegWit), so we
-		// sign the btcwire.MsgTx directly without a separate wire conversion.
+	case common.DASHChain, common.PIVXChain:
+		// Dash and PIVX transparent v1 transactions serialize like Bitcoin
+		// legacy transactions, so the btcwire.MsgTx is signed directly.
 		stx = redeemTx
 	case common.ZECChain:
 		// signing is slightly different, using zecTx, no need to wire
@@ -327,6 +328,8 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			case common.DASHChain:
 				err = c.signUTXODASH(stx.(*btcwire.MsgTx), amount, sourceScript, i)
+			case common.PIVXChain:
+				err = c.signUTXOPIVX(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			case common.ZECChain:
 				err = c.signUTXOZEC(zecTx, zecHashes, i)
 			default:
@@ -355,7 +358,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
-	case common.DASHChain:
+	case common.DASHChain, common.PIVXChain:
 		// stx is already the same *btcwire.MsgTx as redeemTx; nothing to convert.
 		redeemTx = stx.(*btcwire.MsgTx)
 	case common.ZECChain:
@@ -431,6 +434,8 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		maxFee = true // "allowHighFees"
 	case common.LTCChain, common.BTCChain, common.DASHChain:
 		maxFee = 10_000_000
+	case common.PIVXChain:
+		maxFee = true // pivxd sendrawtransaction takes allowhighfees, not a feerate
 	}
 
 	// Rebroadcasting identical bytes is idempotent, so transport failures reuse
@@ -524,6 +529,12 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
 		return dashtxscript.PayToAddrScript(addr)
+	case common.PIVXChain:
+		addr, err := pivxutil.DecodeAddress(c.address.String(), pivxutil.NetworkParams(common.CurrentChainNetwork == common.MockNet))
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
+		}
+		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
 		addr, err := zcash.DecodeAddress(c.address.String(), params.Name)
@@ -608,6 +619,9 @@ func (c *Client) GetGasSats() uint64 {
 		// Fixed fee for ordinary Dash simulation transactions; InstantSend has no extra fee gate.
 		// Scenarios that need a lower fee override FeeSats directly.
 		return 15_000
+	case common.PIVXChain:
+		// Above minRelayTxFee (10000 sat/KB) for a small transparent payment.
+		return 10_000
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return 0
@@ -643,6 +657,8 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 	case common.DASHChain:
 		return memoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, zcash.PayToPubKeyHashScript)
+	case common.PIVXChain:
+		return memoToScripts(memo, pivxutil.MaxDataCarrierBytes, btctxscript.NullDataScript, pivxutil.PayToPubKeyHashScript)
 	case common.ZECChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 	default:
@@ -841,6 +857,15 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
+	case common.PIVXChain:
+		outputAddr, err := pivxutil.DecodeAddress(tx.ToAddress.String(), pivxutil.NetworkParams(common.CurrentChainNetwork == common.MockNet))
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
 	case common.ZECChain:
 		var outputAddr *zcash.Address
 		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
@@ -945,7 +970,11 @@ func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
 	return &btcchaincfg.Params{Name: common.ZECNetworkName()}
 }
 
-// getChainCfgDASH selects Dash parameters for the configured simulation network.
+func (c *Client) signUTXOPIVX(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
+	// Transparent v1 uses the same legacy sighash as the Dash simulation signer.
+	return c.signUTXODASH(redeemTx, amount, sourceScript, idx)
+}
+
 func (c *Client) getChainCfgDASH() *dashchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:

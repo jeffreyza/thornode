@@ -45,6 +45,8 @@ var (
 	XMRAsset = Asset{Chain: XMRChain, Symbol: "XMR", Ticker: "XMR", Synth: false}
 	// DASHAsset DASH
 	DASHAsset = Asset{Chain: DASHChain, Symbol: "DASH", Ticker: "DASH", Synth: false}
+	// PIVXAsset PIVX
+	PIVXAsset = Asset{Chain: PIVXChain, Symbol: "PIVX", Ticker: "PIVX", Synth: false}
 	// POLAsset POL
 	POLAsset = Asset{Chain: POLChain, Symbol: "POL", Ticker: "POL", Synth: false}
 	// SUIAsset SUI
@@ -156,6 +158,7 @@ var assetShortCodes = sync.OnceValue(func() map[string]string {
 	shorts[TAOAsset.ShortCode()] = TAOAsset.String()
 	shorts[DOTAsset.ShortCode()] = DOTAsset.String()
 	shorts[DASHAsset.ShortCode()] = DASHAsset.String()
+	shorts[PIVXAsset.ShortCode()] = PIVXAsset.String()
 
 	return shorts
 })
@@ -388,6 +391,8 @@ func (a Asset) ShortCode() string {
 		return "ad"
 	case "DASH.DASH":
 		return "dh"
+	case "PIVX.PIVX":
+		return "pv"
 	default:
 		return ""
 	}

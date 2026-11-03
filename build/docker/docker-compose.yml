@@ -229,6 +229,7 @@ services:
       - solana
       - polygon
       - dash1
+      - pivx
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &bifrost-environment
@@ -288,6 +289,9 @@ services:
       # enable dash
       BIFROST_CHAINS_DASH_DISABLED: "${BIFROST_CHAINS_DASH_DISABLED:-false}"
       BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash1:19898}
+      BIFROST_CHAINS_PIVX_DISABLED: "${BIFROST_CHAINS_PIVX_DISABLED:-false}"
+      BIFROST_CHAINS_PIVX_RPC_HOST: ${PIVX_HOST:-pivx:51473}
+      BIFROST_CHAINS_PIVX_BLOCK_SCANNER_START_BLOCK_HEIGHT: "1"
       BIFROST_CHAINS_DASH_INSTANT_SEND_ENABLED: "true"
       # Regtest has no ChainLock during bootstrap. Let the scanner start and
       # retry until one exists, without triggering a restart of Bifrost.
@@ -857,6 +861,26 @@ services:
       BOOTSTRAP_BLOCK_TIME: ${DASH_BOOTSTRAP_BLOCK_TIME:-1}
       DASH_MASTER_ADDR: ${DASH_MASTER_ADDR:-yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}
     entrypoint: "/mocknet/entrypoint-masternode.sh"
+
+  # ------------------------------ pivx ------------------------------
+
+  pivx:
+    container_name: pivx
+    profiles:
+      - pivx
+      - mocknet
+      - mocknet-cluster
+    hostname: pivx
+    build:
+      context: ../..
+      dockerfile: build/docker/pivx/Dockerfile
+    restart: unless-stopped
+    environment:
+      BLOCK_TIME: ${PIVX_BLOCK_TIME:-60}
+      RPC_USER: thorchain
+      RPC_PASSWORD: password
+    ports:
+      - "51473:51473"
 
   # ------------------------------ ethereum ------------------------------
 

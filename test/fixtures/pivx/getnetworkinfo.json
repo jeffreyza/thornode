@@ -1,0 +1,36 @@
+{
+  "version": 5060100,
+  "subversion": "/PIVX Core:5.6.1/",
+  "protocolversion": 70927,
+  "localservices": "0000000000000005",
+  "timeoffset": 0,
+  "networkactive": true,
+  "connections": 0,
+  "networks": [
+    {
+      "name": "ipv4",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "ipv6",
+      "limited": false,
+      "reachable": true,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    },
+    {
+      "name": "onion",
+      "limited": true,
+      "reachable": false,
+      "proxy": "",
+      "proxy_randomize_credentials": false
+    }
+  ],
+  "relayfee": 0.00010000,
+  "localaddresses": [
+  ],
+  "warnings": ""
+}

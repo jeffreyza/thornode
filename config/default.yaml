@@ -24,6 +24,7 @@ bifrost:
       - BTC
       - DASH
       - DOGE
+      - PIVX
       - ETH
       - GAIA
       - LTC
@@ -623,6 +624,30 @@ bifrost:
         estimated_average_tx_size: 2000
         max_sats_per_vbyte: 9765
         min_sats_per_vbyte: 2
+
+    pivx:
+      <<: *default-chain
+      disabled: true # enabled on mocknet via BIFROST_CHAINS_PIVX_DISABLED
+      chain_id: PIVX
+      block_scanner:
+        <<: *default-block-scanner
+        max_reorg_rescan_blocks: 240 # 4h at 1 minute blocks; not a finality parameter
+        chain_id: PIVX
+        gas_price_resolution: 1
+        gas_cache_blocks: 10
+        observation_flexibility_blocks: 3
+        scan_mempool: true
+      mempool_tx_id_cache_size: 1_000_000
+      scanner_leveldb: *default-leveldb
+      min_confirmations: 0
+      utxo:
+        <<: *utxo
+        block_cache_count: 240
+        estimated_average_tx_size: 256
+        max_sats_per_vbyte: 9765
+        min_sats_per_vbyte: 10 # minRelayTxFee is 10000 sat/KB
+        default_sats_per_vbyte: 10
+        max_mempool_ancestors: 0 # pivxd has no getmempoolentry
 
     sui:
       <<: *default-chain
