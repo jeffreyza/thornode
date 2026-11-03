@@ -1,0 +1,105 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+# The following tests use the `bindings.wasm` contract, which implements these following interfaces.
+# Messages and query results are simply passed through the contract layer for testing
+
+# pub fn execute(
+#     _deps: DepsMut,
+#     _env: Env,
+#     _info: MessageInfo,
+#     msg: ExecuteMsg,
+# ) -> Result<Response, ContractError> {
+#     match msg {
+#         ExecuteMsg::Any(any_msg) => Ok(Response::default().add_message(CosmosMsg::Any(any_msg))),
+#     }
+# }
+
+# pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+#     match msg {
+#         QueryMsg::Grpc { path, data } => to_json_binary(&deps.querier.query_grpc(path, data)?),
+#     }
+# }
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "bindings.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "bindings"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+# Query payload here is a base64 encoding of the raw message bytes. This will be 100x easier with interchaintest
+# Query here is base64(json({ path: "/types.Query/Pool", data: base64(proto(QueryPoolRequest {Asset: "BTC.BTC"})) }))
+# data: CgdCVEMuQlRD
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJncnBjIjp7InBhdGgiOiIvdHlwZXMuUXVlcnkvUG9vbCIsImRhdGEiOiJDZ2RDVkVNdVFsUkQifX0=
+asserts:
+  # no oracle prices yet: the same bytes as bindings.yaml
+  - .data == "CgdCVEMuQlRDEgFiGglBdmFpbGFibGUgCCoBMDIBMDoJMTAwMDAwMDAwQgwxMDAwMDQzNTA1ODNKATBSDDEwMDAwMDAwMDAwMFoMMTAwMDAwMDAwMDAwYgEwagEwcgEwegEwggEBMIoBCTEwMDAwMDAwMJoBCDcwMDAwMDAwugEBMMoBATDSAQEw2gEBMOIBATDqARQwLjAzMTYyMzQ2NDQ4MTc3MzY1NvIBHTMxNjIzNDY0NDguMTc3MzY1NjU0NjUxNDY5OTYx+gEUMC4wMzE2MjM0NjQ0ODE3NzM2NTaCAgEw"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .lp_unit_fair_value_rune == null
+  - .lp_unit_spot_value_rune == null
+  - .lp_fair_spot_deviation_bps == null
+  - .fair_value_oracle_price_rune == null
+---
+########################################################################################
+# with oracle prices for BTC and RUNE the pool and the contract see the fair value
+########################################################################################
+# P = 100000 / 100 = 1000 RUNE per BTC = R/A: fair value == spot value
+type: tx-price-feed
+prices:
+  BTC: "100000"
+  RUNE: "100"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  # block rewards have grown R to 100005438228, so spot R/A drifted above P = 1000:
+  # fair = 2 * sqrt(A * R * P) / L, spot = 2 * R / L; deviation ~0.27 bps truncates to 0
+  - .lp_unit_fair_value_rune == "2.000054381540662008"
+  - .lp_unit_fair_value_asset == "0.002000054381540662"
+  - .lp_unit_spot_value_rune == "2.000108764560000000"
+  - .lp_fair_spot_deviation_bps == "0"
+  - .fair_value_oracle_price_rune == "1000.000000000000000000"
+  - .lp_fair_value_overhang == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+  - .[0].lp_unit_fair_value_rune == "2.000054381540662008"
+  - .[0].fair_value_oracle_price_rune == "1000.000000000000000000"
+---
+type: check
+# the same /types.Query/Pool grpc query as above, now carrying fields 40-44
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJncnBjIjp7InBhdGgiOiIvdHlwZXMuUXVlcnkvUG9vbCIsImRhdGEiOiJDZ2RDVkVNdVFsUkQifX0=
+asserts:
+  - .data == "CgdCVEMuQlRDEgFiGglBdmFpbGFibGUgCCoBMDIBMDoJMTAwMDAwMDAwQgwxMDAwMDU0MzgyMjhKATBSDDEwMDAwMDAwMDAwMFoMMTAwMDAwMDAwMDAwYgEwagEwcgEwegEwggEBMIoBCTEwMDAwMDAwMJoBCDcwMDAwMDAwugEBMMoBATDSAQEw2gEBMOIBATDqARQwLjAzMTYyMzYzNjQ0OTMzOTU5OPIBHTMxNjIzNjM2NDQuOTMzOTU5ODM2MzkyNTA5Mjk2+gEUMC4wMzE2MjM2MzY0NDkzMzk1OTiCAgEwwgIUMi4wMDAwNTQzODE1NDA2NjIwMDjKAhQwLjAwMjAwMDA1NDM4MTU0MDY2MtICFDIuMDAwMTA4NzY0NTYwMDAwMDAw2gIBMOICFzEwMDAuMDAwMDAwMDAwMDAwMDAwMDAw"

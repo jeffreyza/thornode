@@ -1,0 +1,347 @@
+########################################################################################
+# Trade Asset Limit Swaps Tests
+#
+# This test suite validates limit swap functionality with trade assets (BTC~BTC, ETH~ETH).
+# Tests cover:
+# - Creating limit swaps with trade assets
+# - Modifying existing limit swaps
+# - Successful execution when price target is met
+# - Cancellation of limit swaps
+########################################################################################
+
+# Set minimum slip basis points for trade accounts
+type: env
+key: TRADE_ACCOUNTS_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable trade accounts
+type: tx-mimir
+key: TradeAccountsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue for limit swaps
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify pools are created
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Setup: Deposit assets into trade accounts (creates BTC~BTC and ETH~ETH)
+########################################################################################
+# Deposit BTC to create BTC~BTC trade asset
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "20000000"  # 0.2 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "trade+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Deposit ETH to create ETH~ETH trade asset
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"  # 1 ETH (8 decimals in THORChain)
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "trade+:{{ addr_thor_cat }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify BTC~BTC trade account balance
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC~BTC"
+  - .[0].units|tonumber == 20000000
+  - .[0].owner == "{{ addr_thor_fox }}"
+---
+# Verify ETH~ETH trade account balance
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "ETH~ETH"
+  - .[0].units|tonumber == 100000000
+  - .[0].owner == "{{ addr_thor_cat }}"
+---
+# Verify BTC~BTC trade unit totals
+type: check
+endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+asserts:
+  - .asset == "BTC~BTC"
+  - .units|tonumber == 20000000
+  - .depth|tonumber == 20000000
+---
+# Verify ETH~ETH trade unit totals
+type: check
+endpoint: http://localhost:1317/thorchain/trade/unit/ETH~ETH
+asserts:
+  - .asset == "ETH~ETH"
+  - .units|tonumber == 100000000
+  - .depth|tonumber == 100000000
+---
+########################################################################################
+# Test 1: Create limit swap from BTC~BTC to ETH~ETH
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000"  # 0.1 BTC~BTC
+    asset: "BTC~BTC"
+memo: "=<:ETH~ETH:{{ addr_thor_fox }}:50000000"  # Target: 0.5 ETH~ETH
+---
+type: create-blocks
+count: 1
+---
+# Verify swap is in the advanced queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.state.count >= 0
+  - .swap.state.deposit == "10000000"
+  - .swap.trade_target == "50000000"
+  - .swap.tx.coins[0].asset == "BTC~BTC"
+  - .swap.target_asset == "ETH~ETH"
+  - .queue_type == "advanced"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length > 0
+  - any(.tx.id == "{{ native_txid -1 }}")
+---
+########################################################################################
+# Test 2: Modify the limit swap (change target price)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000"  # Minimal RUNE deposit for modification
+    asset: "rune"
+memo: "m=<:10000000BTC~BTC:50000000ETH~ETH:40000000"  # Lower target to 0.4 ETH~ETH
+---
+type: create-blocks
+count: 5
+---
+# Verify modification took effect
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+asserts:
+  - .swap.trade_target == "40000000"  # Target should be updated
+  - .queue_type == "advanced"
+---
+########################################################################################
+# Test 3: Trigger price movement to meet target (execute swap)
+########################################################################################
+# Create a large regular swap to move the price favorably
+# ETH->BTC swap increases BTC value relative to ETH
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "500000000"  # Large swap to move price (5 ETH)
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "=:BTC.BTC:{{ addr_btc_cat }}"
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 15  # Give time for limit swap to execute (needs ~20 iterations)
+---
+# Verify limit swap executed and ETH~ETH credited to trade account
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length == 2  # Should now have both BTC~BTC (remaining) and ETH~ETH (swapped)
+  - any(.asset == "ETH~ETH")
+  - .|map(select(.asset == "ETH~ETH"))|.[0].units|tonumber >= 40000000  # Should have received at least target amount
+---
+# Verify swap is removed from queue after execution
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|map(select(.tx.id == "{{ native_txid -3 }}"))|length == 0
+---
+# Wait for outbound to be scheduled
+type: create-blocks
+count: 5
+---
+# Clear the outbound from the large regular swap (ETH->BTC outputs BTC)
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 110 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${REGULAR_SWAP_OUT=15974624}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 10 }}"
+    block_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is empty after observing out
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 4: Create another limit swap for cancellation test
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000"  # 0.5 ETH~ETH
+    asset: "ETH~ETH"
+memo: "=<:BTC~BTC:{{ addr_thor_cat }}:25000000"  # Target: 0.25 BTC~BTC
+---
+type: create-blocks
+count: 1
+---
+# Verify new swap is in queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.state.deposit == "50000000"
+  - .swap.trade_target == "25000000"
+  - .swap.tx.coins[0].asset == "ETH~ETH"
+  - .swap.target_asset == "BTC~BTC"
+  - .queue_type == "advanced"
+---
+# Check cat's trade account before cancellation
+# Note: Trade asset limit swaps don't lock balance until execution
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "ETH~ETH"
+  - .[0].units|tonumber == 100000000  # Balance unchanged until swap executes
+---
+########################################################################################
+# Test 5: Cancel the limit swap (set target to 0)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1000000"  # Minimal RUNE deposit for cancellation
+    asset: "rune"
+memo: "m=<:50000000ETH~ETH:25000000BTC~BTC:0"  # Cancel by setting target to 0
+---
+type: create-blocks
+count: 1
+---
+# Verify swap is removed from queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|map(select(.tx.id == "{{ native_txid -2 }}"))|length == 0  # Cancelled swap should be gone
+---
+# Verify ETH~ETH is refunded to trade account
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "ETH~ETH"
+  - .[0].units|tonumber >= 50000000  # Should have refunded amount back (minus fees)
+---
+########################################################################################
+# Final verification: Ensure trade account integrity
+########################################################################################
+# Verify Fox's final trade account state
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length >= 1  # Should have at least ETH~ETH from executed swap
+  - any(.asset == "ETH~ETH")
+  - .|map(select(.asset == "ETH~ETH"))|.[0].units|tonumber > 0
+---
+# Verify Cat's final trade account state
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "ETH~ETH"
+  - .[0].units|tonumber > 0  # Should have refunded balance
+---
+# Verify swap queue is clean (no lingering limit swaps)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|map(select(.tx.from_address == "{{ addr_thor_fox }}" or .tx.from_address == "{{ addr_thor_cat }}"))|length == 0
+---
+# Verify asgard invariants are not broken
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

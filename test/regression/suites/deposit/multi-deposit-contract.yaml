@@ -1,0 +1,112 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+########################################################################################
+# Test for MsgDeposit auto-increment txid feature using multi-deposit WASM contract
+# This test verifies that multiple MsgDeposit messages in the same transaction
+# (via a WASM contract) properly auto-increment their txids to avoid collisions
+########################################################################################
+---
+# Enable permissionless WASM
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Upload the multi-deposit contract
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "multi-deposit.wasm"
+gas: 3000000
+---
+type: create-blocks
+count: 1
+---
+# Instantiate the multi-deposit contract
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "multi-deposit-test"
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+# Give some RUNE to the test user
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "2000000000000"  # 20000 RUNE
+---
+type: create-blocks
+count: 1
+---
+# Whitelist the contract as a bond provider
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+memo: "bond:{{ addr_thor_dog }}:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:0"
+gas: 100000
+coins:
+  - amount: "1000000"
+    asset: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Execute multiple deposits through contract - this should trigger auto-increment!
+########################################################################################
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "messages":
+      {
+        "messages":
+          [
+            {
+              "type_url": "/types.MsgDeposit",
+              "value": "CiIKEgoEVEhPUhIEUlVORRoEUlVORRIMNTAwMDAwMDAwMDAwEjFCT05EOnR0aG9yMXpmM2dzazdlZHp3bDlzeXllZnZmaGxlMzdjanRxbDM1aDZrODVtGiCt5KX1gDpDmDXGNjlajWSN7ley/JDZjcF/qIcVm2ljiw==",
+            },
+            {
+              "type_url": "/types.MsgDeposit",
+              "value": "CiIKEgoEVEhPUhIEUlVORRoEUlVORRIMNTAwMDAwMDAwMDAwEjFCT05EOnR0aG9yMXpmM2dzazdlZHp3bDlzeXllZnZmaGxlMzdjanRxbDM1aDZrODVtGiCt5KX1gDpDmDXGNjlajWSN7ley/JDZjcF/qIcVm2ljiw==",
+            },
+            {
+              "type_url": "/types.MsgDeposit",
+              "value": "CiIKEgoEVEhPUhIEUlVORRoEUlVORRIMNTAwMDAwMDAwMDAwEjFCT05EOnR0aG9yMXpmM2dzazdlZHp3bDlzeXllZnZmaGxlMzdjanRxbDM1aDZrODVtGiCt5KX1gDpDmDXGNjlajWSN7ley/JDZjcF/qIcVm2ljiw==",
+            },
+          ],
+      },
+  }
+funds:
+  - amount: "1500000000000"  # 1500 RUNE for 3 deposits
+    denom: "rune"
+sender: {{ addr_thor_wolf }}
+gas: 500000
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify that all 3 deposits were processed successfully
+# This proves the auto-increment logic worked to avoid collisions
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events|map(select(.type == "bond"))|length >= 3
+---
+# Verify the total bond amount from the contract
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  # Should have bonded 1500000000000 (from 3 x 500000000000)
+  - .bond_providers.providers|map(select(.bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"))[0].bond == "1500000000000"

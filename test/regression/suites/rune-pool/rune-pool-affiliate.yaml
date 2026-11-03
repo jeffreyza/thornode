@@ -1,0 +1,258 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# Enable POL and RUNEPool
+########################################################################################
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 5000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLMaxNetworkDeposit
+value: 1000000000
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: POLTargetSynthPerPoolDepth
+value: 2500
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: POLMaxPoolMovement
+value: 5000 # .5%
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: POLBuffer
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: tx-mimir
+key: POL-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 5
+---
+type: tx-mimir
+key: RUNEPoolEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 6
+---
+# effectively disable emissions to avoid skew for math checks
+type: tx-mimir
+key: EmissionCurve
+value: 1000000000000
+signer: {{ addr_thor_dog }}
+sequence: 7
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Mint Synth to Trigger POL Add
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000000000"
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000000" # If too high, will hit MaxSynthPerPoolDepth capacity limit.
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${POL_DEPOSIT=1719663685}"
+  - .pol.rune_deposited == "${POL_DEPOSIT}"
+  - .pol.rune_withdrawn == "0"
+  - .pol.pnl == "${POL_PNL=-2535083}"
+  - .reserve.units == "${POL_DEPOSIT}"
+  - .reserve.current_deposit == "${POL_DEPOSIT}"
+  - .reserve.pnl == "${POL_PNL}"
+  - 'all(.providers|.[]; . == "0")'
+---
+########################################################################################
+# Ensure Max Deposit is Respected
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${POL_DEPOSIT}"
+  - .pol.rune_deposited == "${POL_DEPOSIT}"
+  - .pol.rune_withdrawn == "0"
+  - .pol.value == "${POL_VALUE=1717128602}"
+  - .pol.pnl == "${POL_PNL}"
+  - .reserve.units == "${POL_DEPOSIT}"
+  - .providers.units == "0"
+  - .providers.pending_units == "0"
+  - 'all(.providers[]; . == "0")'
+---
+########################################################################################
+# RUNEPool deposit acquires POL ownership from reserve
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${POL_VALUE}"
+    asset: "rune"
+memo: "pool+"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+asserts:
+  - .rune_address == "{{ addr_thor_fox }}"
+  - .deposit_amount == "${POL_VALUE}"
+  - .last_deposit_height == 5
+  - .units == "${POL_DEPOSIT}"
+  - .value == "${POL_VALUE}"
+  - .pnl == "0" # provider entered after loss incurred
+---
+########################################################################################
+# Withdraw with 0 pnl, affiliate should not receive fee
+########################################################################################
+type: check # Check pooler balance before withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune").amount == "${POOLER_INITIAL_BALANCE=2298278871398}"
+---
+type: check # Check affiliate balance before withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "pool-:5000:{{ addr_thor_pig }}:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check # Check pooler balance after withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2-${GAS=2000000}
+---
+type: check # Check affiliate balance after withdraw, should be 0 still
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 0
+---
+########################################################################################
+# Swap to RUNE, causing positive PNL to POL
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000000" # 10 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:r:{{ addr_thor_dog }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.rune_withdrawn == "${POL_WITHDRAWN=1574587635}"
+  - .pol.current_deposit|tonumber == ${POL_DEPOSIT} - ${POL_WITHDRAWN}
+  - .pol.rune_deposited == "${POL_DEPOSIT}"
+  - .pol.value == "832804838"
+  - .pol.pnl == "${POL_PNL=687728788}"
+  - .providers.pnl == "${PROVIDERS_PNL=345110387}"
+  - .reserve.pnl|tonumber + ${PROVIDERS_PNL} == ${POL_PNL}
+  - .reserve.units == "0"
+  - .reserve.value == "0"
+  - .providers.units == "859831842"
+  - .providers.pending_units == "264926819"
+  - (.providers.value|tonumber) > (.pol.value|tonumber)
+  # Because the .pol.value value is 0 and so the .providers.value is the .pol.value plus the undeposited RUNEPool balance.
+---
+########################################################################################
+# Withdraw RUNEPool with affiliate
+########################################################################################
+type: check # Check pooler balance before withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune").amount == "${POOLER_INITIAL_BALANCE=2299135435699}"
+---
+type: check # Check affiliate balance before withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+asserts:
+  - .pnl|tonumber == ${PROVIDERS_PNL}
+  - .value|tonumber == ${POL_VALUE}/2+${PROVIDERS_PNL}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "pool-:10000:{{ addr_thor_pig }}:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check # Check pooler balance after withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  # Mirror handler_rune_pool_withdraw.go:
+  # withdrawYield = GetSafeShare(lifetimePnL, totalValue, withdrawValue)
+  # affiliateAmount = GetSafeShare(affiliateBps, 10000, withdrawYield)
+  - ((${PROVIDERS_PNL} * ((${POL_VALUE}/2+${PROVIDERS_PNL}) / (${POL_VALUE}+${PROVIDERS_PNL})) | round) / 2 | round) as $aff | .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2+${PROVIDERS_PNL}-$aff-${GAS=2000000}
+---
+type: check # Check affiliate balance after withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ((${PROVIDERS_PNL} * ((${POL_VALUE}/2+${PROVIDERS_PNL}) / (${POL_VALUE}+${PROVIDERS_PNL})) | round) / 2 | round) # 50% of proportional yield

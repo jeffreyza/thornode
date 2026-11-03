@@ -1,0 +1,369 @@
+########################################################################################
+## this file is testing regular swaps with the adv swap queue manager. These tests are a
+## copy/paste from swaps/swaps.yaml, except due to the extra block from setting the
+## mimir, the pool depths are slightly different
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap to rune, this limit swap should execute in a single swap
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:THOR.RUNE:{{ addr_thor_fox }}:4533195711"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504535195712
+---
+########################################################################################
+# swap to asset, but won't swap due to limit swap, until another swap comes in later,
+# changing the pool ratio, thus allowing the limit swap to execute
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:9005438/0/0"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+########################################################################################
+# Test new limit swaps API endpoints - basic functionality
+# At this point, we should have 1 queued limit swap (RUNE -> BTC.BTC)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].asset == "THOR.RUNE"
+  - .limit_swaps[0].swap.target_asset == "BTC.BTC"
+  - .limit_swaps[0].blocks_since_created >= 0
+  - .limit_swaps[0].time_to_expiry_blocks > 0
+  - .limit_swaps[0].ratio != ""
+  - .pagination.total == "1"
+  - .pagination.offset == "0"
+  - .pagination.has_next == false
+  - .pagination.has_prev == false
+---
+########################################################################################
+# Test swap queue API response shapes
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - type == "array"
+  - .|length == 1
+  - .[0].tx.coins[0].asset == "THOR.RUNE"
+  - .[0].target_asset == "BTC.BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/paginated?limit=1
+asserts:
+  - type == "object"
+  - .swap_queue|length == 1
+  - .swap_queue[0].tx.coins[0].asset == "THOR.RUNE"
+  - .swap_queue[0].target_asset == "BTC.BTC"
+  - .pagination.total == 1
+  - .pagination.offset == 0
+  - .pagination.limit == 1
+  - .pagination.has_next == false
+  - .pagination.has_prev == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/paginated?offset=1&limit=1
+asserts:
+  - type == "object"
+  - .swap_queue|length == 0
+  - .pagination.total == 1
+  - .pagination.offset == 1
+  - .pagination.limit == 1
+  - .pagination.has_next == false
+  - .pagination.has_prev == true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary
+asserts:
+  - .total_limit_swaps == "1"
+  - .total_value_usd == "0"
+  - .asset_pairs|length == 1
+  - .asset_pairs[0].source_asset == "THOR.RUNE"
+  - .asset_pairs[0].target_asset == "BTC.BTC"
+  - .asset_pairs[0].count == "1"
+  - .asset_pairs[0].total_value_usd == "0"
+  - .oldest_swap_blocks >= 0
+  - .average_age_blocks >= 0
+---
+########################################################################################
+# Test filtering functionality
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?source_asset=THOR.RUNE
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].asset == "THOR.RUNE"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?target_asset=BTC.BTC
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.target_asset == "BTC.BTC"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?source_asset=ETH.ETH
+asserts:
+  - .limit_swaps|length == 0
+  - .pagination.total == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary?source_asset=THOR.RUNE
+asserts:
+  - .total_limit_swaps == "1"
+  - .asset_pairs|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary?target_asset=BTC.BTC
+asserts:
+  - .total_limit_swaps == "1"
+  - .asset_pairs|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary?source_asset=ETH.ETH
+asserts:
+  - .total_limit_swaps == "0"
+  - .asset_pairs|length == 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test case-insensitive filtering (new functionality)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?source_asset=thor.rune
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].asset == "THOR.RUNE"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?target_asset=btc.btc
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.target_asset == "BTC.BTC"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?source_asset=Thor.Rune
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].asset == "THOR.RUNE"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?target_asset=Btc.Btc
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.target_asset == "BTC.BTC"
+  - .pagination.total == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary?source_asset=thor.rune
+asserts:
+  - .total_limit_swaps == "1"
+  - .asset_pairs|length == 1
+  - .asset_pairs[0].source_asset == "THOR.RUNE"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary?target_asset=btc.btc
+asserts:
+  - .total_limit_swaps == "1"
+  - .asset_pairs|length == 1
+  - .asset_pairs[0].target_asset == "BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+#######################################################################################
+# Test pagination and sorting
+#######################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?limit=1
+asserts:
+  - .limit_swaps|length == 1
+  - .pagination.limit == "1"
+  - .pagination.total == "1"
+  - .pagination.has_next == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?offset=0&limit=1
+asserts:
+  - .limit_swaps|length == 1
+  - .pagination.offset == "0"
+  - .pagination.limit == "1"
+  - .pagination.has_prev == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?offset=1&limit=1
+asserts:
+  - .limit_swaps|length == 0
+  - .pagination.offset == "1"
+  - .pagination.limit == "1"
+  - .pagination.has_prev == true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?sort_by=age
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].blocks_since_created >= 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?sort_by=ratio
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].ratio != ""
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?sort_by=age&sort_order=desc
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].blocks_since_created >= 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps?sort_by=amount&sort_order=asc
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].amount != ""
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:0/0/1"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2498675039779
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ native_txid -2 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=9778912}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -2 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test empty state - all limit swaps should be completed now
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+asserts:
+  - .limit_swaps|length == 0
+  - .pagination.total == "0"
+  - .pagination.offset == "0"
+  - .pagination.has_next == false
+  - .pagination.has_prev == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps/summary
+asserts:
+  - .total_limit_swaps == "0"
+  - .total_value_usd == "0"
+  - .asset_pairs|length == 0
+  - .oldest_swap_blocks == "0"
+  - .average_age_blocks == "0"

@@ -1,0 +1,247 @@
+########################################################################################
+## XMR errata that commits before the original inbound reaches quorum. With 5
+## validators: one observes the inbound (no quorum), four attest the errata (errata
+## commits while the inbound voter is still pending), then the remaining observers
+## bring the inbound to quorum. The inbound must be marked reverted at its first
+## quorum, before any vault credit, pool change, or swap.
+########################################################################################
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "300000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: XMR.XMR
+          asset_address: {{ addr_xmr_cat }}
+          asset_deposit_value: "1000000000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: XMR.XMR
+          balance_asset: "1000000000000"
+          balance_rune: "100000000000"
+          decimals: "12"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: XMR
+          transaction_fee_rate: "10000"
+          transaction_size: "5000"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - XMR
+          coins:
+            - amount: "1000000000000"
+              asset: XMR.XMR
+              decimals: "12"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_cat }}
+            - {{ pubkey_fox }}
+            - {{ pubkey_pig }}
+            - {{ pubkey_frog }}
+            - {{ pubkey_goat }}
+          pub_key: {{ pubkey_dog }}
+          pub_key_eddsa: {{ pubkey_cat_eddsa }}
+          pub_key_frost: {{ pubkey_cat_eddsa }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_cat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[]|select(.status == "Active")]|length == 5'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain == "XMR")|.address == "{{ addr_xmr_cat }}"
+---
+########################################################################################
+# one of five validators observes the XMR inbound: no quorum yet
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:THOR.RUNE:{{ addr_thor_wolf }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_cat_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  - .txs|length == 1
+  - .txs[0].signers|length == 1
+  - .consensus_height == null
+---
+########################################################################################
+# four of five validators attest the errata: it commits while the inbound is pending
+########################################################################################
+type: tx-errata-tx
+signer: {{ addr_thor_cat }}
+tx_id: '{{ observe_txid 1 }}'
+chain: XMR
+---
+type: tx-errata-tx
+signer: {{ addr_thor_fox }}
+tx_id: '{{ observe_txid 1 }}'
+chain: XMR
+---
+type: tx-errata-tx
+signer: {{ addr_thor_pig }}
+tx_id: '{{ observe_txid 1 }}'
+chain: XMR
+---
+type: tx-errata-tx
+signer: {{ addr_thor_frog }}
+tx_id: '{{ observe_txid 1 }}'
+chain: XMR
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  # still no inbound consensus, nothing reverted or credited yet
+  - .consensus_height == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset == "XMR.XMR")|.amount == "1000000000000"
+---
+########################################################################################
+# the remaining observers bring the inbound to quorum: it is reverted on arrival
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_fox }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:THOR.RUNE:{{ addr_thor_wolf }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_cat_eddsa }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_pig }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:THOR.RUNE:{{ addr_thor_wolf }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_cat_eddsa }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_frog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:THOR.RUNE:{{ addr_thor_wolf }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_cat_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.status == "reverted"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  # never credited, so nothing was subtracted either
+  - .coins[]|select(.asset == "XMR.XMR")|.amount == "1000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1000000000000"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

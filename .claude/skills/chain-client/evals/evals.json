@@ -1,0 +1,44 @@
+{
+  "skill_name": "chain-client",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want to add support for Cardano (ADA) as a new chain in the bifrost. Can you walk me through all the steps needed and create the initial scaffolding?",
+      "expected_output": "A comprehensive step-by-step guide covering: chain family identification, ChainClient interface implementation, BlockScannerFetcher, SolvencyCheckProvider, instant observations, registration in loadchains.go, config additions, simulation tests, and unit tests. Should reference the correct existing files and patterns.",
+      "files": [],
+      "assertions": [
+        "Does not claim Cardano is in the repo's UTXO family (common/chain.go GetUTXOChains() excludes ADA; GetSigningAlgo() groups it with the ed25519 chains) and points at references/patterns-other.md per the skill's own fallback",
+        "Lists the three interfaces to implement: ChainClient, BlockScannerFetcher, SolvencyCheckProvider",
+        "Mentions registration in bifrost/pkg/chainclients/loadchains.go",
+        "Mentions the common package switch cases (chain.go, asset.go, address.go, pubkey.go)",
+        "Mentions docker/mocknet setup and simulation tests as required steps",
+        "Does not invent a file layout that no existing client uses (e.g. a <chain>_scanner.go for a UTXO chain)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Review the XRP chain client for correctness and test coverage. Tell me if there are any gaps or issues.",
+      "expected_output": "A thorough verification covering: interface compliance check (all 17 ChainClient methods), BlockScannerFetcher compliance, solvency provider check, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
+      "files": [],
+      "assertions": [
+        "Reads the actual xrp client source rather than describing it from memory",
+        "Checks SignTx returns a TxInItem for instant observation",
+        "Checks signer cache usage and that BroadcastTx returns an error on failure",
+        "Checks GetConfirmationCount / ConfirmationCountReady against XRP's instant finality (0)",
+        "Names at least one concrete, verifiable test-coverage gap with a file reference, or states that coverage is complete after listing what exists"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I need to add simulation tests for the Solana chain client. What's the process and what test scenarios do I need?",
+      "expected_output": "Guide covering: LiteChainClient implementation in test/simulation/pkg/solana/, registration in main.go, RPC config in mocknet.go, seed funding, network fees, SimChains registration. Required scenarios: native SOL swap to another token, swap from another token to SOL, add liquidity, withdraw liquidity. Should note that registration in SimChains auto-includes swap and LP tests.",
+      "files": [],
+      "assertions": [
+        "Points at test/simulation/pkg/ for the LiteChainClient implementation and at the existing solana entry there",
+        "Lists the four required scenarios: SOL to other asset, other asset to SOL, add liquidity, withdraw liquidity",
+        "Mentions adding explicit swap entries in test/simulation/actors/suites/swaps.go, not only allSimChains",
+        "Mentions seed funding / mocknet RPC config for the chain"
+      ]
+    }
+  ]
+}

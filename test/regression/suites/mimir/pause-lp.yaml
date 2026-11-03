@@ -1,0 +1,198 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# successful add liquidity
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type=="add_liquidity")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_rune | tonumber == 0
+  - .pending_asset | tonumber == 0
+  - .rune_deposit_value | tonumber == 50000000
+  - .asset_deposit_value | tonumber == 49950
+---
+########################################################################################
+# add should fail with PAUSELP = 1 (all chains paused)
+########################################################################################
+type: tx-mimir
+key: PauseLP
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - length == 1
+  - .PAUSELP == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("unable to add liquidity while chain has paused LP actions")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_rune | tonumber == 0
+  - .pending_asset | tonumber == 0
+  - .rune_deposit_value | tonumber == 50000000
+  - .asset_deposit_value | tonumber == 49950
+---
+########################################################################################
+# add should fail with PAUSELPBTC = 1 (BTC chain paused)
+########################################################################################
+type: tx-mimir
+key: PauseLP
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: PauseLPBTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - length == 2
+  - .PAUSELP == 0
+  - .PAUSELPBTC == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("unable to add liquidity while chain has paused LP actions")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_rune | tonumber == 0
+  - .pending_asset | tonumber == 0
+  - .rune_deposit_value | tonumber == 50000000
+  - .asset_deposit_value | tonumber == 49950
+---
+########################################################################################
+# add BTC pool should fail with PauseLPDeposit-BTC-BTC = 1
+########################################################################################
+type: tx-mimir
+key: PauseLPBTC
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: PauseLPDeposit-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - length == 3
+  - .PAUSELP == 0
+  - .PAUSELPBTC == 0
+  - ."PAUSELPDEPOSIT-BTC-BTC" == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("unable to add liquidity, deposits are paused for asset (BTC.BTC)")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_rune | tonumber == 0
+  - .pending_asset | tonumber == 0
+  - .rune_deposit_value | tonumber == 50000000
+  - .asset_deposit_value | tonumber == 49950
+---
+########################################################################################
+# ETH pool add should still succeed
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:ETH.ETH"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type=="add_liquidity")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_rune | tonumber == 0
+  - .pending_asset | tonumber == 0
+  - .rune_deposit_value | tonumber == 49999999
+  - .asset_deposit_value | tonumber == 499479

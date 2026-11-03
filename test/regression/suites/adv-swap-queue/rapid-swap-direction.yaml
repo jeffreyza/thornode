@@ -1,0 +1,231 @@
+########################################################################################
+# Advanced Swap Queue - Rapid Swap Direction Tracking Tests
+#
+# This test validates that same-direction rapid swaps are limited by direction tracking
+# to prevent draining pools without counter-liquidity. On rapid swap iteration 1+,
+# market swaps going in the same direction as the last swap through a pool are skipped.
+#
+# Test 1: Same-direction BTC->RUNE swaps → count=1 (only iteration 0)
+# Test 2: Counter-direction BTC->ETH + ETH->BTC → count=3 (all iterations)
+########################################################################################
+
+# Set minimum slip basis points (ensures market swaps get quantity > 1 for streaming)
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Set rapid swap iterations to 3
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+# Record initial BTC pool state (balance_rune includes block rewards)
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_rune|tonumber > 100000000000
+  - .balance_asset == "100000000"
+---
+########################################################################################
+# Test 1: Same-direction market swaps are limited by direction tracking
+#
+# Two BTC->RUNE market swaps go in the same direction (asset-to-rune) through the
+# BTC pool. With AdvSwapQueueRapidSwapMax=3, only iteration 0 processes both swaps.
+# Iterations 1 and 2 see same direction as the last swap and skip.
+# Expected: count=1 per swap after 1 block.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "${TXID_2={{ observe_txid 2 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify: same-direction swaps limited to count=1 (only iteration 0 executed).
+# Both swaps go asset-to-rune through BTC pool, so iterations 1 and 2 are skipped.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.count == 1
+  - .swap.state.quantity == 10
+  - .swap.trade_target == "0"
+  - .queue_type == "advanced"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.state.count == 1
+  - .swap.state.quantity == 10
+  - .swap.trade_target == "0"
+  - .queue_type == "advanced"
+---
+# Swaps should still be in queue (9 sub-swaps remaining each)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 2
+---
+# Let same-direction swaps complete (1 sub-swap per block for 9 more blocks)
+type: create-blocks
+count: 9
+---
+# Queue should be empty after completion
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 2: Counter-direction swaps allow all rapid swap iterations
+#
+# BTC->ETH and ETH->BTC double swaps are counter-directional through both pools:
+#   BTC->ETH: BTC pool (asset-to-rune) + ETH pool (rune-to-asset)
+#   ETH->BTC: ETH pool (asset-to-rune) + BTC pool (rune-to-asset)
+#
+# Direction alternates in both pools on each swap, so all 3 rapid iterations execute.
+# Expected: count=3 per swap after 1 block.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_3={{ observe_txid 3 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "${TXID_4={{ observe_txid 4 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify: counter-direction swaps get count=3 (all 3 iterations executed).
+# BTC->ETH goes through BTC(false) + ETH(true), ETH->BTC goes through ETH(false) + BTC(true).
+# These are opposite directions in both pools, so direction tracking never blocks them.
+# Quantity may differ from Test 1 due to pool balance changes after earlier swaps.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_3}
+asserts:
+  - .swap.state.count == 3
+  - .swap.state.quantity > 3
+  - .queue_type == "advanced"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_4}
+asserts:
+  - .swap.state.count == 3
+  - .swap.state.quantity > 3
+  - .queue_type == "advanced"
+---
+# Swaps should still be in queue (7 sub-swaps remaining each)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Verify pool state consistency - pools should not be drained excessively
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_rune|tonumber > 0
+  - .balance_asset|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_rune|tonumber > 0
+  - .balance_asset|tonumber > 0
+---
+# Let counter-direction swaps complete
+type: create-blocks
+count: 10
+---
+# Final invariant check
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

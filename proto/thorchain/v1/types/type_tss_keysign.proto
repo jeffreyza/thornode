@@ -1,0 +1,27 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "gogoproto/gogo.proto";
+
+// State zero is the legacy terminal representation because voters written
+// before explicit replay protection have no state field. Missing voters are
+// created explicitly as pending, so a stored legacy voter remains
+// distinguishable from every current voter.
+enum TssKeysignFailVoterState {
+  LegacyVoter = 0;
+  PendingVoter = 1;
+  CompletedVoter = 2;
+}
+
+message TssKeysignFailVoter {
+  string id = 1 [ (gogoproto.customname) = "ID" ];
+  int64 height = 4;
+  repeated string signers = 6;
+  int64 last_round_count = 7;
+  TssKeysignFailVoterState state = 8;
+}

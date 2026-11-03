@@ -1,0 +1,298 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Verify POL Reserve system income is disabled by default (POLReserveSystemIncomeBps=0)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .. | select(.type? == "rewards").pol_reserve_reward == "0"
+---
+########################################################################################
+# Enable POL Reserve system income at 1000 bps (10%)
+########################################################################################
+type: tx-mimir
+key: POLReserveSystemIncomeBps
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 10000000000
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Generate liquidity fees via a swap (BTC -> RUNE)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify POL Reserve receives 10% of system income
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.. | select(.type? == "swap").liquidity_fee_in_rune | tonumber] | add // 0 | . == ${LIQFEES=226759664}
+  - .. | select(.type? == "rewards") | [.[] | tonumber?] | add - ${LIQFEES} == ${BLOCK_REWARD=1109850}
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${POL_RESERVE_REWARD=22786951}"
+  - 10000 * ${POL_RESERVE_REWARD} / (${LIQFEES} + ${BLOCK_REWARD}) | round == 1000
+---
+# Verify transfer from reserve to pol_reserve module
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")] | length == 1
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")][0].sender == "{{ addr_module_reserve }}"
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")][0].amount == "${POL_RESERVE_REWARD}rune"
+---
+########################################################################################
+# Verify POL Reserve deploys capital to the best pool (BTC has fees, ETH does not)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${POL_TOTAL_DEPLOYED=22897935}"
+---
+# Verify pool API shows pol_reserve_rune_deposited for BTC
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited == "${POL_TOTAL_DEPLOYED}"
+---
+# Verify ETH pool has no POL Reserve deposits
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .pol_reserve_rune_deposited == "0"
+---
+########################################################################################
+# Generate ETH fees so ETH is eligible for deployment (rolling fees > 0 required).
+# Use a small swap so BTC remains the higher-yield pool.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify POL Reserve blacklist prevents deployment to a pool
+# Both pools now have fees, but BTC has higher yield. Blacklisting BTC forces
+# deployment to fall back to ETH (the next eligible pool with fees).
+########################################################################################
+type: tx-mimir
+key: POLReserveBlacklist-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# BTC is blacklisted and would otherwise be the best pool, so deployment should go to ETH
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+---
+# ETH pool should now have deposits since BTC was blacklisted, forcing deployment to ETH
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .pol_reserve_rune_deposited | tonumber > 0
+---
+# Remove blacklist for subsequent tests
+type: tx-mimir
+key: POLReserveBlacklist-BTC-BTC
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Swap enough through ETH pool to make it the best yield pool, then verify deployment
+# goes to ETH. A large swap (50% of pool depth) generates significantly more fees than
+# the earlier BTC swap, making ETH the highest fee-yield pool.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "500000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 6
+  finalise_height: 6
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+---
+########################################################################################
+# Verify POL Reserve respects POLReserveMaxDeployment cap
+########################################################################################
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 1000
+signer: {{ addr_thor_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 7
+  finalise_height: 7
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 1000
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "1000"
+---
+########################################################################################
+# Disable POL Reserve and verify no further deployments
+########################################################################################
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 6 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 8
+  finalise_height: 8
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  # System income still routed to pol_reserve module
+  - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
+  # But no deployment since MaxDeployment=0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0

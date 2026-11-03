@@ -1,0 +1,158 @@
+########################################################################################
+# Stable Reserve - Automated Management (Deployment & Rescue)
+#
+# Asserts the EndBlock automated management logic. The Stable Reserve manager
+# periodically deploys RUNE from its module account into healthy stable inventory
+# via streaming swaps. It also monitors inventory for depegs and rescues at-risk
+# assets into healthy stables or RUNE.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable features and anchors
+########################################################################################
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: StableReserveEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: StableReserveDepegToleranceBps
+value: 5000
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# SCENARIO 1: RUNE Deployment
+# Send RUNE to the module; it should be deployed into USDC or USDT.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-send
+from_address: {{ addr_thor_dog }}
+to_address: {{ addr_module_stable_reserve }}
+amount:
+  - denom: rune
+    amount: "10000000000"
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# The EndBlock manager deploys the module's RUNE into stable inventory via a
+# slip-sized market swap. Assert the *outcome* — the module's RUNE is deployed out
+# and converted into stable inventory, with no deployment swap left pending —
+# after the execution block. Per-block scheduling/settlement events are not
+# asserted directly.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+asserts:
+  - '[.balances[]|select(.denom == "rune")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '.active_swaps|length == 0'
+  - '.inventory|length > 0'
+  - '[.inventory[]|select(.amount|tonumber > 0)]|length >= 1'
+---
+########################################################################################
+# SCENARIO 2: Depeg Rescue
+# Drop both stable prices to 0.50. Manager should rescue USDC into RUNE because
+# there are no healthy stable targets.
+#
+# Rescue swaps are scheduled with quantity 0 (slip-sized by the swap manager,
+# like deployment swaps) and interval 1. Bound the native streaming length to 10
+# blocks so this rescue resolves in a deterministic, short number of sub-swaps.
+########################################################################################
+type: tx-mimir
+key: StableReserveDepegToleranceBps
+value: 100
+signer: {{ addr_thor_dog }}
+sequence: 5
+---
+type: tx-mimir
+key: StreamingSwapMaxLength
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 6
+---
+type: tx-mimir
+key: StreamingSwapMaxLengthNative
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 7
+---
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "0.50"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert rescue scheduled: event emitted
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "stable_reserve_depeg_detected")]|length == 1'
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled")]|length == 1'
+---
+########################################################################################
+# step through the rescue stream, re-feeding the depeg price so the slip-sized
+# rescue keeps running and fully drains USDC inventory regardless of how many
+# sub-swaps the swap manager sizes it into.
+########################################################################################
+type: create-blocks
+count: 10
+---
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "0.50"
+---
+type: create-blocks
+count: 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  # USDC inventory should be gone (rescued)
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'

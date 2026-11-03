@@ -1,0 +1,431 @@
+{
+  "generated_at": "2026-10-05T13:52:21Z",
+  "endpoint": "https://gateway.liquify.com/chain/thorchain_api",
+  "tip_height": 28114069,
+  "sampled_blocks": 2000,
+  "stride": 25,
+  "first_height": 28064094,
+  "last_height": 28114069,
+  "txs_per_block": 7.1235,
+  "gas_per_block": 28888774.681,
+  "failed_txs": 51,
+  "messages": {
+    "/cosmos.bank.v1beta1.MsgSend": {
+      "count": 4,
+      "per_block": 0.002,
+      "gas_total": 884850,
+      "gas_share": 0.000015314772083115753,
+      "avg_gas": 221212
+    },
+    "/cosmwasm.wasm.v1.MsgExecuteContract": {
+      "count": 17,
+      "per_block": 0.0085,
+      "gas_total": 814745,
+      "gas_share": 0.000014101411517045991,
+      "avg_gas": 47926
+    },
+    "/types.MsgDeposit": {
+      "count": 4733,
+      "per_block": 2.3665,
+      "gas_total": 1915176039,
+      "gas_share": 0.03314740864138487,
+      "avg_gas": 404643
+    },
+    "/types.MsgNetworkFeeQuorum": {
+      "count": 362,
+      "per_block": 0.181,
+      "gas_total": 1355793442,
+      "gas_share": 0.023465748495239892,
+      "avg_gas": 3745285
+    },
+    "/types.MsgObservedTxQuorum": {
+      "count": 4180,
+      "per_block": 2.09,
+      "gas_total": 39179939424,
+      "gas_share": 0.6781170170185246,
+      "avg_gas": 9373191,
+      "attestations": 110565
+    },
+    "/types.MsgPriceFeedQuorumBatch": {
+      "count": 2000,
+      "per_block": 1,
+      "gas_total": 5755737578,
+      "gas_share": 0.09961892883233846,
+      "avg_gas": 2877868
+    },
+    "/types.MsgSend": {
+      "count": 81,
+      "per_block": 0.0405,
+      "gas_total": 6240350,
+      "gas_share": 0.0001080064846797439,
+      "avg_gas": 77041
+    },
+    "/types.MsgSolvencyQuorum": {
+      "count": 338,
+      "per_block": 0.169,
+      "gas_total": 1106170942,
+      "gas_share": 0.019145341992083918,
+      "avg_gas": 3272695
+    },
+    "/types.MsgTssKeysignFail": {
+      "count": 2509,
+      "per_block": 1.2545,
+      "gas_total": 8441651710,
+      "gas_share": 0.1461060879738875,
+      "avg_gas": 3364548
+    },
+    "/types.MsgTssPool": {
+      "count": 23,
+      "per_block": 0.0115,
+      "gas_total": 15140282,
+      "gas_share": 0.0002620443782608351,
+      "avg_gas": 658273
+    }
+  },
+  "memos": {
+    "deposit:bond": {
+      "count": 2,
+      "per_block": 0.001,
+      "gas_total": 365371,
+      "gas_share": 0.000006323753846166114,
+      "avg_gas": 182685
+    },
+    "deposit:other:": {
+      "count": 1,
+      "per_block": 0.0005,
+      "gas_total": 61630,
+      "gas_share": 0.0000010666772938717566,
+      "avg_gas": 61630
+    },
+    "deposit:other:maint": {
+      "count": 1,
+      "per_block": 0.0005,
+      "gas_total": 128827,
+      "gas_share": 0.0000022297068917348173,
+      "avg_gas": 128827
+    },
+    "deposit:other:reference": {
+      "count": 26,
+      "per_block": 0.013,
+      "gas_total": 2822141,
+      "gas_share": 0.000048844941178071285,
+      "avg_gas": 108543
+    },
+    "deposit:swap": {
+      "count": 86,
+      "per_block": 0.043,
+      "gas_total": 30829719,
+      "gas_share": 0.0005335933998660827,
+      "avg_gas": 358485
+    },
+    "deposit:swap-limit": {
+      "count": 290,
+      "per_block": 0.145,
+      "gas_total": 102382797,
+      "gas_share": 0.0017720169534801461,
+      "avg_gas": 353044
+    },
+    "deposit:swap-streaming": {
+      "count": 4301,
+      "per_block": 2.1505,
+      "gas_total": 1547197412,
+      "gas_share": 0.02677852261102621,
+      "avg_gas": 359729
+    },
+    "deposit:thorname": {
+      "count": 2,
+      "per_block": 0.001,
+      "gas_total": 216490,
+      "gas_share": 0.000003746957120725241,
+      "avg_gas": 108245
+    },
+    "deposit:trade-": {
+      "count": 22,
+      "per_block": 0.011,
+      "gas_total": 230725088,
+      "gas_share": 0.003993334617818642,
+      "avg_gas": 10487504
+    },
+    "deposit:unbond": {
+      "count": 2,
+      "per_block": 0.001,
+      "gas_total": 446564,
+      "gas_share": 0.000007729022863224845,
+      "avg_gas": 223282
+    },
+    "observed-in:consolidate": {
+      "count": 24,
+      "per_block": 0.012,
+      "gas_total": 174462004,
+      "gas_share": 0.0030195466219400226,
+      "avg_gas": 7269250
+    },
+    "observed-in:empty": {
+      "count": 5,
+      "per_block": 0.0025,
+      "gas_total": 67191911,
+      "gas_share": 0.001162941518668699,
+      "avg_gas": 13438382
+    },
+    "observed-in:migrate": {
+      "count": 51,
+      "per_block": 0.0255,
+      "gas_total": 578645234,
+      "gas_share": 0.010015053258395414,
+      "avg_gas": 11345984
+    },
+    "observed-in:secure+": {
+      "count": 5,
+      "per_block": 0.0025,
+      "gas_total": 22929925,
+      "gas_share": 0.00039686565548730066,
+      "avg_gas": 4585985
+    },
+    "observed-in:swap": {
+      "count": 155,
+      "per_block": 0.0775,
+      "gas_total": 1270097087,
+      "gas_share": 0.02198253648735293,
+      "avg_gas": 8194174
+    },
+    "observed-in:swap-streaming": {
+      "count": 1538,
+      "per_block": 0.769,
+      "gas_total": 13775237046,
+      "gas_share": 0.2384185068094962,
+      "avg_gas": 8956591
+    },
+    "observed-in:trade+": {
+      "count": 201,
+      "per_block": 0.1005,
+      "gas_total": 2544801908,
+      "gas_share": 0.044044822532291465,
+      "avg_gas": 12660706
+    },
+    "observed-out:consolidate": {
+      "count": 22,
+      "per_block": 0.011,
+      "gas_total": 167734476,
+      "gas_share": 0.0029031081770027117,
+      "avg_gas": 7624294
+    },
+    "observed-out:migrate": {
+      "count": 63,
+      "per_block": 0.0315,
+      "gas_total": 679744844,
+      "gas_share": 0.01176486111830601,
+      "avg_gas": 10789600
+    },
+    "observed-out:outbound": {
+      "count": 2102,
+      "per_block": 1.051,
+      "gas_total": 19798159193,
+      "gas_share": 0.3426618022331897,
+      "avg_gas": 9418724
+    },
+    "observed-out:refund": {
+      "count": 14,
+      "per_block": 0.007,
+      "gas_total": 100935796,
+      "gas_share": 0.0017469726063941535,
+      "avg_gas": 7209699
+    }
+  },
+  "attestations_histogram": {
+    "1": 1171,
+    "2-5": 1066,
+    "21-50": 169,
+    "51+": 989,
+    "6-20": 785
+  },
+  "end_block_events": {
+    "add_liquidity": {
+      "count": 2000,
+      "per_block": 1
+    },
+    "affiliate_fee": {
+      "count": 288,
+      "per_block": 0.144
+    },
+    "burn": {
+      "count": 2014,
+      "per_block": 1.007
+    },
+    "coin_received": {
+      "count": 75522,
+      "per_block": 37.761
+    },
+    "coin_spent": {
+      "count": 77535,
+      "per_block": 38.7675
+    },
+    "coinbase": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "fee": {
+      "count": 335,
+      "per_block": 0.1675
+    },
+    "gas": {
+      "count": 328,
+      "per_block": 0.164
+    },
+    "limit_swap_close": {
+      "count": 290,
+      "per_block": 0.145
+    },
+    "message": {
+      "count": 75521,
+      "per_block": 37.7605
+    },
+    "mint_burn": {
+      "count": 2000,
+      "per_block": 1
+    },
+    "outbound": {
+      "count": 3014,
+      "per_block": 1.507
+    },
+    "pol_reserve_deploy": {
+      "count": 2000,
+      "per_block": 1
+    },
+    "refund": {
+      "count": 2169,
+      "per_block": 1.0845
+    },
+    "rev_share": {
+      "count": 2265,
+      "per_block": 1.1325
+    },
+    "rewards": {
+      "count": 2000,
+      "per_block": 1
+    },
+    "scheduled_outbound": {
+      "count": 342,
+      "per_block": 0.171
+    },
+    "secured_asset_deposit": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "secured_asset_withdraw": {
+      "count": 14,
+      "per_block": 0.007
+    },
+    "streaming_swap": {
+      "count": 364,
+      "per_block": 0.182
+    },
+    "swap": {
+      "count": 21107,
+      "per_block": 10.5535
+    },
+    "trade_account_deposit": {
+      "count": 2294,
+      "per_block": 1.147
+    },
+    "trade_account_withdraw": {
+      "count": 2666,
+      "per_block": 1.333
+    },
+    "transfer": {
+      "count": 75521,
+      "per_block": 37.7605
+    }
+  },
+  "begin_block_events": {
+    "pool_balance_change": {
+      "count": 7487,
+      "per_block": 3.7435
+    }
+  },
+  "tx_events": {
+    "bond": {
+      "count": 3,
+      "per_block": 0.0015
+    },
+    "coin_received": {
+      "count": 5339,
+      "per_block": 2.6695
+    },
+    "coin_spent": {
+      "count": 5339,
+      "per_block": 2.6695
+    },
+    "donate": {
+      "count": 2,
+      "per_block": 0.001
+    },
+    "fee": {
+      "count": 22,
+      "per_block": 0.011
+    },
+    "limit_swap": {
+      "count": 290,
+      "per_block": 0.145
+    },
+    "message": {
+      "count": 19535,
+      "per_block": 9.7675
+    },
+    "oracle_price": {
+      "count": 30000,
+      "per_block": 15
+    },
+    "outbound": {
+      "count": 332,
+      "per_block": 0.166
+    },
+    "refund": {
+      "count": 2,
+      "per_block": 0.001
+    },
+    "scheduled_outbound": {
+      "count": 22,
+      "per_block": 0.011
+    },
+    "slash_points": {
+      "count": 212,
+      "per_block": 0.106
+    },
+    "thorname": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "toggle_maintenance": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "trade_account_deposit": {
+      "count": 40,
+      "per_block": 0.02
+    },
+    "trade_account_withdraw": {
+      "count": 22,
+      "per_block": 0.011
+    },
+    "transfer": {
+      "count": 5339,
+      "per_block": 2.6695
+    },
+    "tss_keygen": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "tss_keygen_success": {
+      "count": 1,
+      "per_block": 0.0005
+    },
+    "tss_keysign": {
+      "count": 2,
+      "per_block": 0.001
+    },
+    "tx": {
+      "count": 14751,
+      "per_block": 7.3755
+    }
+  }
+}

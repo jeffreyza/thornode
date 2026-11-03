@@ -1,0 +1,186 @@
+{{ template "default-state.yaml" }}
+---
+# This test covers edge cases for the maintenance feature that are not covered in the maint.yaml file
+# It focuses on invalid memo formats, node state interactions, and unusual scenarios
+#
+# Step 1: Create blocks to initialize the chain
+type: create-blocks
+count: 1
+---
+# Step 2: Test invalid maint memo formats
+# Test missing address
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:"
+---
+type: create-blocks
+count: 1
+---
+# Check that maintenance status didn't change
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .maintenance == false
+---
+# Test invalid address format
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:invalid-address"
+---
+type: create-blocks
+count: 1
+---
+# Check that maintenance status didn't change
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .maintenance == false
+---
+# Step 3: Test maintenance for nodes with different statuses and bond amounts
+# Bond a node with a large amount to achieve a different status
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "100000000000" # 100,000 RUNE (above active threshold)
+memo: "BOND:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Check fox node status before maintenance
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .total_bond == "100000000000"
+  - .maintenance == false
+---
+# Toggle maintenance for fox node
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Verify maintenance flag is set to true
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .maintenance == true
+---
+# Step 4: Test maintenance interaction with leave request
+# Request the fox node to leave
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "leave:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Check that leave request was processed but maintenance flag is still true
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .requested_to_leave == true
+  - .maintenance == true
+---
+# Toggle maintenance again for a node that's leaving
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Verify maintenance flag toggled back to false even for a node that's leaving
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .requested_to_leave == true
+  - .maintenance == false
+---
+# Step 5: Test multiple rapid toggles
+# Toggle maintenance multiple times in succession
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# First toggle should set it to true
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .maintenance == true
+---
+# Toggle again immediately
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Second toggle should set it back to false
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .maintenance == false
+---
+# Toggle third time
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# Third toggle should set it to true again
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .maintenance == true
+---
+# Step 6: Test with incorrect address format
+# Create an invalid address by adding text to it (this should fail)
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_fox }}INVALID"
+---
+type: create-blocks
+count: 1
+---
+# Maintenance status should remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .maintenance == true

@@ -1,0 +1,56 @@
+########################################################################################
+# Thin mocknet images for CI's test-simulation (make test-simulation-cluster-native).
+#
+# The Go binaries are built natively in the CI job, on golang:1.26.4-bookworm with
+# the runner's warm Go caches, with the same flags as the in-image builds:
+#   thornode, bifrost, recover-keyshare-backup: build/docker/Dockerfile (make install)
+#   events: tools/events/Dockerfile
+#   simtest: ci/Dockerfile.simtest (make _build-test-simulation)
+# The build context is that output directory. Every image sits on the runtime stage
+# of build/docker/Dockerfile, which the job builds first with --target runtime.
+# Local `make test-simulation-cluster` still builds the full Dockerfiles.
+########################################################################################
+
+ARG RUNTIME_IMAGE=thornode-runtime:mocknet
+
+# hadolint ignore=DL3006
+FROM ${RUNTIME_IMAGE} AS runtime
+
+########################################################################################
+# thornode:mocknet (thornode, bifrost and their validators)
+########################################################################################
+
+FROM runtime AS thornode
+
+COPY thornode bifrost recover-keyshare-backup /usr/bin/
+COPY libwasmvm.*.so /usr/lib/
+COPY scripts /scripts
+
+ARG TAG=mocknet
+ENV NET=$TAG
+
+CMD ["/scripts/fullnode.sh"]
+
+########################################################################################
+# events (compose's docker-events; replays events for failure diagnostics)
+########################################################################################
+
+FROM runtime AS events
+
+COPY events /usr/bin/
+COPY libwasmvm.*.so /usr/lib/
+
+CMD ["events"]
+
+########################################################################################
+# simtest (the simulation client; needs no source tree at run time)
+########################################################################################
+
+FROM runtime AS simtest
+
+COPY simtest /simtest/simtest
+COPY libwasmvm.*.so /usr/lib/
+
+WORKDIR /app/test/simulation
+
+CMD ["/simtest/simtest"]

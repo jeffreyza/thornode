@@ -1,0 +1,181 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "2500000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499998000000
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 0
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "2499996000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499996000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block?height=3
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.events|length == 11
+  - .txs[0]|.result.events[6].type == "message"
+  - .txs[0]|.result.events[6].sender == "{{ addr_thor_fox }}"
+  - .txs[0]|.result.events[6].action == "/types.MsgSend"
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+########################################################################################
+# attempt send to lending module
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .|[.coins[]|select(.denom == "rune")]|length == 0
+---
+type: tx-send
+from_address: {{ addr_thor_wolf }}
+to_address: {{ addr_module_lending }}
+amount:
+  - denom: rune
+    amount: "1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .|[.coins[]|select(.denom == "rune")]|length == 0
+---
+########################################################################################
+# bond with send
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_wolf }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "50000"
+memo: "bond:{{ addr_thor_wolf }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_wolf }}
+asserts:
+  - .result.value.sequence == "2"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_wolf }}
+asserts:
+  - .total_bond == "50000"
+---
+########################################################################################
+# unbond with send
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_wolf }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "0"
+memo: "unbond:{{ addr_thor_wolf }}:50000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_wolf }}
+asserts:
+  - .result.value.sequence == "3"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_wolf }}
+asserts:
+  - .total_bond == "0"
+---
+########################################################################################
+# leave with send
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .leave_height == 0
+---
+type: tx-send
+from_address: {{ addr_thor_dog }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "0"
+memo: "leave:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .leave_height == 800000000

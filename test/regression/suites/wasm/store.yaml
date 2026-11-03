@@ -1,0 +1,55 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+asserts:
+  - .code_infos|length == 0
+---
+type: tx-store-code
+sender: {{ addr_thor_fox }}
+wasm_file: "simple.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+asserts:
+  - .code_infos|length == 0
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "simple.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgStoreCode"
+  - .txs[0].result.events[4].code_checksum == "f9b2efce508ab3594d41ad0d7bd645014b1e145df64083308d37c780de7390b0"
+  - .txs[0].result.events[4].code_id == "1"
+  - .txs[0].result.events[4].type == "store_code"
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+asserts:
+  - .code_infos|length == 1
+  - .code_infos[0].code_id == "1"
+  - .code_infos[0].creator == "{{ addr_thor_dog }}"
+  - .code_infos[0].data_hash == "F9B2EFCE508AB3594D41AD0D7BD645014B1E145DF64083308D37C780DE7390B0"
+

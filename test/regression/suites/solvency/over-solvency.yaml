@@ -1,0 +1,118 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Set over-solvency configuration via mimir
+# - OverSolvencyCheckInterval: Run every 1 block (check immediately)
+# - OverSolvencyToTreasuryBps: Swap 100% (10000 bps) to over-solvency address
+########################################################################################
+type: tx-mimir
+key: OverSolvencyCheckInterval
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: OverSolvencyToTreasuryBps
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check initial solvency (should be balanced)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/solvency
+asserts:
+  - .assets|length >= 0
+---
+########################################################################################
+# Create over-solvency by sending extra BTC to the vault with noop memo
+# This simulates having more BTC in vaults than what pools track
+# The noop memo adds coins to vault but doesn't update pool balance
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "noop"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify over-solvency is detected via querier
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/solvency
+asserts:
+  - .assets|length > 0
+  - .assets[]|select(.asset == "BTC.BTC")|.amount|tonumber == 100000000
+---
+########################################################################################
+# Check reserve balance BEFORE the swap
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 34999999560628
+---
+########################################################################################
+# Advance blocks to trigger the over-solvency interval (1 block)
+########################################################################################
+type: tx-mimir
+key: OverSolvencyToTreasuryBps
+value: 10000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify that an over-solvency swap was created in the swap queue
+# The swap should be for 100% of the over-solvency (10000 bps)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length > 0
+  - .[0].tx.coins[0].asset == "BTC.BTC"
+  - .[0].target_asset == "THOR.RUNE"
+---
+########################################################################################
+# Process the swap by creating blocks until queue is empty
+# This ensures the over-solvency is fully resolved before test ends
+########################################################################################
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check over-solvency address balance AFTER the swap
+# The swap output goes to the OverSolvencyAddress (addr_thor_pig in mocknet)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 25001359557

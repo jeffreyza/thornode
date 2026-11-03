@@ -1,0 +1,69 @@
+# DASH quote timing, network validation and extended P2PKH memo outputs.
+{{ template "default-state.yaml" }}
+---
+{{ template "dash-xmr-quote-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: DASH.DASH
+  to_asset: THOR.RUNE
+  amount: 100000000
+  destination: {{ addr_thor_fox }}
+asserts:
+  - .expected_amount_out | tonumber > 0
+  - .inbound_confirmation_blocks == 1
+  - .inbound_confirmation_seconds == 150
+  - .memo | contains("{{ addr_thor_fox }}")
+---
+# The long destination and refund address require extended memo mode.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: DASH.DASH
+  to_asset: XMR.XMR
+  amount: 100000000
+  destination: {{ addr_xmr_fox }}
+  refund_address: {{ addr_dash_cat }}
+status: 400
+asserts:
+  - .message | contains("generated memo too long for source chain")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: DASH.DASH
+  to_asset: XMR.XMR
+  amount: 100000000
+  destination: {{ addr_xmr_fox }}
+  refund_address: {{ addr_dash_cat }}
+  extended: true
+asserts:
+  - .expected_amount_out | tonumber > 0
+  - .inbound_confirmation_blocks == 1
+  - .inbound_confirmation_seconds == 150
+  - .memo | contains("{{ addr_xmr_fox }}/{{ addr_dash_cat }}")
+  - .memo | length > 80
+  - (.vout | length) == (1 + (((.memo | length) - 79) / 20 | ceil))
+  - .vout[0].type == "op_return" and .vout[0].amount == 0
+  - .vout[0].data | test("^[0-9a-f]{160}$")
+  - .vout[0].data | endswith("5e")
+  - .vout[1:] | length > 0
+  - all(.vout[1:][]; .type == "address" and .amount == 546 and (.data | test("^y[1-9A-HJ-NP-Za-km-z]{33}$")))
+---
+# A mainnet DASH refund address must be rejected on mocknet.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: DASH.DASH
+  to_asset: XMR.XMR
+  amount: 100000000
+  destination: {{ addr_xmr_fox }}
+  refund_address: XpANHDZNTgEyM2FN8QjERafkRaK4X8Uaeq
+  extended: true
+status: 400
+asserts:
+  - .message | contains("not valid for DASH on the current network")

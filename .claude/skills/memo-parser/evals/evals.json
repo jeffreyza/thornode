@@ -1,0 +1,42 @@
+{
+  "skill_name": "memo-parser",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "What does this memo do, field by field? =:BTC.BTC:bc1qxyz:0/100/10:t:15",
+      "expected_output": "Explains a market streaming swap to BTC.BTC paying bc1qxyz, no price limit, stream interval 100 blocks, quantity 10 sub-swaps, affiliate THORName 't' with 15 bps. Grounded in ParseSwapMemo in x/thorchain/memo/memo_swap.go.",
+      "files": [],
+      "assertions": [
+        "States interval = 100 blocks and quantity = 10 sub-swaps (LIMIT/INTERVAL/QUANTITY order), not 100 sub-swaps every 10 blocks",
+        "Identifies '=' as TxSwap via stringToTxTypeMap in x/thorchain/memo/memo.go",
+        "Treats 't' as an affiliate THORName and 15 as basis points",
+        "Does not invoke version-gated parser functions (e.g. parseSwapV98 or version.GTE)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My unit test does ParseMemo(common.LatestVersion, \"=:ETH.ETH:0xabc:0/5/3\") and gets an invalid price limit error, but the same memo works on mocknet. Why?",
+      "expected_output": "Explains that ParseMemo passes a nil keeper, so ParseSwapMemo falls back to ParseSwapMemoV1, which parses part 3 with cosmos.ParseUint and has no streaming, refund-address, multi-affiliate or DEX support. The chain uses ParseMemoWithTHORNames with a real keeper. Suggests a keeper-backed test such as MemoSuite in memo_test.go.",
+      "files": [],
+      "assertions": [
+        "Names ParseSwapMemoV1 (memo_swap.go) as the keeper-nil fallback",
+        "Explains the chain path uses ParseMemoWithTHORNames with a keeper (processOneTxIn in x/thorchain/handler.go)",
+        "Recommends a keeper-backed gocheck test (MemoSuite) rather than a testify example",
+        "Does not blame a version gate"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to add a new memo type `vote:PROPOSALID:CHOICE` that native RUNE holders send. List every file I need to touch.",
+      "expected_output": "Lists: TxType enum and both string maps in memo.go, a new memo_vote.go with Parse method using (idx, required, def) getters, a case in parser.parse() in memo_parser.go, a proto Msg in proto/thorchain/v1/types plus make proto-gen, a case in processOneTxIn in handler.go, handler registration in getInternalHandlerMapping, docs/concepts/memos.md, and gocheck tests. No version gating.",
+      "files": [],
+      "assertions": [
+        "Mentions both stringToTxTypeMap and txToStringMap in x/thorchain/memo/memo.go",
+        "Mentions adding a case to parser.parse() in x/thorchain/memo/memo_parser.go",
+        "Mentions processOneTxIn and getInternalHandlerMapping in x/thorchain/handler.go",
+        "Puts the proto under proto/thorchain/v1/types/ and regenerates with make proto-gen",
+        "Does not reference memo_exec.go, TxExec, or a version.GTE gate"
+      ]
+    }
+  ]
+}

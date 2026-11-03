@@ -1,0 +1,190 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Same owner and preferred asset, but different partner payout addresses.
+# A high multiplier keeps the balances available for checking and transfer.
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:few:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}:BTC.BTC::10000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:few:BTC:{{ addr_btc_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:tan:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}:BTC.BTC::10000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:tan:BTC:{{ addr_btc_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .affiliate_collector_rune == "0"
+  - .aliases[1].address == "{{ addr_btc_cat }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/tan
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .affiliate_collector_rune == "0"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::few:100"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .affiliate_collector_rune == "${FEW_BAL=9803222}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/tan
+asserts:
+  - .affiliate_collector_rune == "0"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "2000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::tan:200"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .affiliate_collector_rune == "${FEW_BAL}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/tan
+asserts:
+  - .affiliate_collector_rune == "${TAN_BAL=37709033}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[] | select(.denom == "rune") | (.amount | tonumber) == (${FEW_BAL} + ${TAN_BAL})
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result[] | select(.denom == "rune") | .amount == "${OWNER_BEFORE=2499592000000}"
+---
+# Ownership change settles FEW to the old native owner without using TAN's fees.
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:few:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.. | select(.type? == "affiliate_collector_settlement")] | length == 1'
+  - '[.. | select(.type? == "affiliate_collector_settlement")][0].name == "few"'
+  - '[.. | select(.type? == "affiliate_collector_settlement")][0].owner == "{{ addr_thor_cat }}"'
+  - '[.. | select(.type? == "affiliate_collector_settlement")][0].rune_amount == "${FEW_BAL}"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == "{{ addr_thor_pig }}"
+  - .affiliate_collector_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/tan
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .affiliate_collector_rune == "${TAN_BAL}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[] | select(.denom == "rune") | .amount == "${TAN_BAL}"
+---
+# The old owner receives FEW's entire available balance, minus only the normal
+# 0.02 RUNE transaction fee for the ownership-change transaction itself.
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result[] | select(.denom == "rune") | (.amount | tonumber) == (${OWNER_BEFORE} + ${FEW_BAL} - 2000000)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/affiliate_collector
+asserts:
+  - .broken == false

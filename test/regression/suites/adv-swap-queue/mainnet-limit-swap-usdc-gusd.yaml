@@ -1,0 +1,142 @@
+########################################################################################
+# Mainnet Limit Swap Reproduction Test
+#
+# This test reproduces the exact conditions of mainnet limit swap transaction:
+# TX: E886A626D74CDDC9B85DA893272D811ADC21C76A0CCB225EC6B6C9EC14B922AB
+# Block Height: 23,714,433
+#
+# Transaction Details:
+# - From: ETH-USDC to ETH-GUSD
+# - Input: 10,200,000,009 (10.20 USDC, 6 decimals)
+# - Target Output: 10,221,602,129 (102.21 GUSD, 2 decimals)
+# - Streaming Interval: 3,600 blocks
+# - Trade Target: 0 (limit order)
+#
+# Expected Behavior:
+# The limit swap should NOT execute immediately because the market price is
+# approximately 0.36% below the limit price. The swap should remain in the
+# queue until either:
+# 1. Market conditions improve to meet the limit price
+# 2. The swap expires (StreamingLimitSwapMaxAge blocks)
+########################################################################################
+
+# Set minimum slip basis points to match mainnet at block 23714433
+type: env
+key: SECURED_ASSET_SLIP_MIN_BPS
+value: "5"
+---
+type: env
+key: SECUREDASSETSLIPMINBPS
+value: "5"
+---
+type: env
+key: L1SLIPMINBPS
+value: "5"
+---
+type: env
+key: TRADEACCOUNTSSLIPMINBPS
+value: "5"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-gusd-mainnet-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Configure network settings to match mainnet
+########################################################################################
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: StreamingLimitSwapMaxAge
+value: 43200
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+  - .|map(select(.asset == "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"))|length == 1
+  - .|map(select(.asset == "ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD"))|length == 1
+---
+# Verify pool depths match mainnet block 23714433
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
+asserts:
+  - .balance_rune == "517731612507150"
+  - .balance_asset == "387695133089347"
+  - .decimals == 6
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD
+asserts:
+  - .balance_rune == "15116987235918"
+  - .balance_asset == "11325887977642"
+  - .decimals == 2
+---
+########################################################################################
+# Step 1: Secure the L1 USDC assets using "secure+" memo
+# This converts ETH.USDC (L1 asset) to ETH-USDC (secured asset)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10200000009"
+          asset: "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+          decimals: 6
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Step 2: Execute the mainnet limit swap transaction using secured assets
+# Memo: =<:eth-gusd-0x056fd409e1d7a124bd7017459dfea2f387b6d5cd:thor1nlcjajshh9dhqjhg8nw0s3e9yt5n9nwa753tx2:10221602129/3600/0
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10200000009"
+    asset: "ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+memo: "=<:ETH-GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD:{{ addr_thor_fox }}:10121602129/3600/0"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify the swap is queued but NOT executing
+# The market price is ~0.36% below the limit price, so the swap should wait
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+# Verify swap is still in queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+ - .|map(select(.tx.id == "{{ native_txid -1 }}"))|length == 0

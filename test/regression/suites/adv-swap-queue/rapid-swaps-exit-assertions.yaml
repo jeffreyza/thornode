@@ -1,0 +1,100 @@
+########################################################################################
+# Rapid Swap Exit Assertions (Stable)
+# Focuses on deterministic and invariant-safe exit behavior checks.
+########################################################################################
+
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 10
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Exit path 1: empty queue with high rapid max
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+# Exit path 2: same-direction pair should stop at first rapid attempt
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "${TXID_2={{ observe_txid 2 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_cat }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.count == 1
+  - .swap.state.quantity > .swap.state.count
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.state.count == 1
+  - .swap.state.quantity > .swap.state.count
+---
+# Exit path 3: no extra rapid processing when queue drains over blocks
+type: create-blocks
+count: 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

@@ -1,0 +1,948 @@
+type: env
+key: OBSERVATION_DELAY_FLEXIBILITY
+value: "1"
+---
+{{ template "6-validators-btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# unfinalized inbound - slash early observers
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_fox }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_pig }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 0
+---
+########################################################################################
+# unfinalized inbound - slash non-observers on consensus
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_frog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 2
+---
+########################################################################################
+# unfinalized inbound - unslash late observers within flexibility window
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_goat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 2
+---
+########################################################################################
+# unfinalized inbound - slash late observers after flexibility window
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_hawk }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 3
+---
+########################################################################################
+# unfinalized inbound - slash duplicate observations
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 1
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 3
+---
+########################################################################################
+# finalized inbound - slash early observers
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_fox }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-in
+signer: {{ addr_thor_pig }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+########################################################################################
+# finalized inbound - slash non-observers on consensus
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_frog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+---
+########################################################################################
+# finalized inbound - unslash late observers within flexibility window
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_goat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 5
+---
+########################################################################################
+# finalized inbound - slash late observers after flexibility window
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_hawk }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 6
+---
+########################################################################################
+# finalized inbound - slash duplicate observations
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "TEST"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 6
+---
+########################################################################################
+# unfinalized outbound - slash early observers
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=993000}
+---
+type: tx-observed-out
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-out
+signer: {{ addr_thor_fox }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-out
+signer: {{ addr_thor_pig }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
+  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 1
+  - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 6
+---
+########################################################################################
+# unfinalized outbound - slash non-observers on consensus
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=993000}
+---
+type: tx-observed-out
+signer: {{ addr_thor_frog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Being an outbound (to avoid apparent insolvency),
+# unfinalised consensus is sufficient for internal handler action.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
+---
+########################################################################################
+# unfinalized outbound - unslash late observers within flexibility window
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_goat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
+---
+########################################################################################
+# unfinalized outbound - slash late observers after flexibility window
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_hawk }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 9
+---
+########################################################################################
+# unfinalized outbound - slash duplicate observations
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 3
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 9
+---
+########################################################################################
+# finalized outbound - slash early observers
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-out
+signer: {{ addr_thor_fox }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-out
+signer: {{ addr_thor_pig }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 1
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 9
+---
+########################################################################################
+# finalized outbound - slash non-observers on consensus
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: tx-observed-out
+signer: {{ addr_thor_frog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 11
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+################################################################################################
+# finalized outbound - unslash late observers within flexibility window;
+# duplicate observation with different observation heights appropriately increases slash points.
+################################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_goat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-observed-out
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "986000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 5    # Different observation height from cat's earlier observation.
+    finalise_height: 5 # Different observation height from cat's earlier observation.
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 11
+---
+########################################################################################
+# finalized outbound - slash late observers after flexibility window
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_hawk }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 12
+---
+########################################################################################
+# finalized outbound - slash duplicate observations
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_cat }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+ - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 5
+ - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_pig }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_frog }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 0
+ - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 12

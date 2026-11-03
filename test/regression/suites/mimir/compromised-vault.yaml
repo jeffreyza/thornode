@@ -1,0 +1,85 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# baseline: all chains advertise the dog vault
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length > 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+asserts:
+  - .error|not
+  - .inbound_address == "{{ addr_btc_dog }}"
+---
+########################################################################################
+# flag the dog vault as compromised via operational mimir
+########################################################################################
+type: tx-mimir
+key: "CompromisedVault-{{ pubkey_dog }}"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# /inbound_addresses must not expose the compromised vault
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 0'
+---
+########################################################################################
+# /quote/swap must also refuse the compromised vault as inbound
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+status: 400
+asserts:
+  - .message|contains("no active vault")
+---
+########################################################################################
+# clearing the mimir restores the vault in both endpoints
+########################################################################################
+type: tx-mimir
+key: "CompromisedVault-{{ pubkey_dog }}"
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length > 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+asserts:
+  - .error|not
+  - .inbound_address == "{{ addr_btc_dog }}"

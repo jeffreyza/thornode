@@ -1,0 +1,134 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "7500310000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active # Node to be set to Standby by EndBlock (getChangedNodes), triggering low bond removal
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+        - bond: "110000000" # 1.1 RUNE bond Standby to not be removed
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_fox }}
+          bond_address: {{ addr_thor_fox }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fox }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_fox }}
+          version: {{ version }}
+        - bond: "100000000" # 1 RUNE bond Standby to be removed, 0 bond providers (only operator)
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_fish }}
+          bond_address: {{ addr_thor_fish }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fish }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_fish }}
+          version: {{ version }}
+        - bond: "100000000" # 1 RUNE bond Standby to be removed, 2 bond providers (including operator)
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_pig }}
+          bond_address: {{ addr_thor_pig }}
+          pub_key_set:
+            secp256k1: {{ pubkey_pig }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_pig }}
+          version: {{ version }}
+      bond_providers:
+        - node_address: {{ addr_thor_pig }}
+          node_operator_fee: "0"
+          providers:
+            - bond: "40000000"
+              bond_address: {{ addr_thor_pig }}
+            - bond: "${GOAT_BOND=60000000}"
+              bond_address: {{ addr_thor_goat }}
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - length == 3 # Two 1-RUNE nodes removed, fish and pig.
+  #
+  - .[0].node_address == "{{ addr_thor_fox }}"
+  - .[0].status == "Standby"
+  - .[0].total_bond | tonumber / 1e8 == 1.1
+  #
+  - .[1].node_address == "{{ addr_thor_cat }}"
+  - .[1].status == "Standby"
+  - .[1].total_bond == "2500000000000"
+  #
+  - .[2].node_address == "{{ addr_thor_dog }}"
+  - .[2].status == "Active"
+  - .[2].total_bond == "5000000000000"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_goat }}
+asserts:
+  - .result | length == 1 # Non-zero balance.
+  - .result[0].denom == "rune"
+  - .result[0].amount == "${GOAT_BOND}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "bond")] | length == 5
+  #
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_reward"))] | length == 2
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_reward"))][0].node_address == "{{ addr_thor_cat }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_reward"))][0].amount == "0"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_reward"))][1].node_address == "{{ addr_thor_dog }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_reward"))][1].amount == "0"
+  #
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))] | length == 3
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][0].node_address == "{{ addr_thor_fish }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][0].bond_address == "{{ addr_thor_fish }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][0].amount | tonumber / 1e8 == 1
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][1].node_address == "{{ addr_thor_pig }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][1].bond_address == "{{ addr_thor_pig }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][1].amount | tonumber / 1e8 == 0.4
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][1].node_address == "{{ addr_thor_pig }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][2].bond_address == "{{ addr_thor_goat }}"
+  - .|[..|select((.type? == "bond") and (.bond_type == "bond_returned"))][2].amount | tonumber / 1e8 == 0.6
+  # All bond providers have their bond_returned events appropriately emitted.

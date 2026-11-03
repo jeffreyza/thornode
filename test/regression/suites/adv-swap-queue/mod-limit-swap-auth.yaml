@@ -1,0 +1,287 @@
+########################################################################################
+# Modify Limit Swap Authorization Test
+#
+# Tests that users cannot modify other users' limit swaps through any available
+# transaction path. Specifically verifies:
+#
+# 1. Native RUNE limit swaps: Only the swap creator can modify (From==Signer enforced).
+# 2. Cross-chain BTC limit swaps: Cannot be modified via tx-deposit by any user
+#    (From address is always a THOR address, which won't match the BTC From address).
+# 3. Cross-chain BTC limit swaps: A different BTC user cannot modify via observed-in
+#    (their BTC address doesn't match the original swap's From address).
+# 4. The legitimate owner CAN modify their own cross-chain swap via observed-in.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Setup: Fox creates a native RUNE->BTC limit swap (native_txid 2)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:8998438"
+---
+type: create-blocks
+count: 1
+---
+# Verify swap exists in queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 1
+---
+# Verify swap details
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "8998438"
+---
+########################################################################################
+# Test 1: Cat CANNOT modify Fox's native RUNE limit swap (fails DeliverTx, no native_txid assigned)
+# Cat's From address (addr_thor_cat) does not match Fox's From (addr_thor_fox).
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000THOR.RUNE:8998438BTC.BTC:6666666"  # Distinctive value chosen for debuggability — easy to spot if unauthorized modification leaks through
+---
+type: create-blocks
+count: 1
+---
+# Fox's swap should remain unchanged (Cat's modification was rejected at DeliverTx)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "8998438"
+---
+########################################################################################
+# Test 2: Fox CAN modify their own native RUNE limit swap (native_txid 4)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000THOR.RUNE:8998438BTC.BTC:9500000"
+---
+type: create-blocks
+count: 1
+---
+# Fox's swap should be updated to new target
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "9500000"
+---
+########################################################################################
+# Setup: Fox creates a cross-chain BTC->ETH limit swap via observed-in
+# (referenced via observe_txid 1)
+# native_txid 5 = observed-in submission
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:500000000000000000"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify cross-chain swap exists
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "500000000000000000"
+---
+########################################################################################
+# Test 3: Cat CANNOT modify Fox's BTC swap via tx-deposit (fails DeliverTx, no native_txid assigned)
+# When Cat submits a tx-deposit, From = Cat's THOR address, which does not match
+# Fox's BTC address in the original swap.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:1000000BTC.BTC:500000000000000000ETH.ETH:100000000000000000"
+---
+type: create-blocks
+count: 1
+---
+# Fox's cross-chain swap should remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "500000000000000000"
+---
+########################################################################################
+# Test 4: Fox ALSO cannot modify their own BTC swap via tx-deposit (fails DeliverTx, no native_txid assigned)
+# Even the legitimate owner cannot modify a cross-chain swap via tx-deposit
+# because From (Fox's THOR address) does not match From (Fox's BTC address).
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:1000000BTC.BTC:500000000000000000ETH.ETH:300000000000000000"
+---
+type: create-blocks
+count: 1
+---
+# Fox's cross-chain swap should still be unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "500000000000000000"
+---
+########################################################################################
+# Test 5: Cat CANNOT modify Fox's BTC swap via observed-in from Cat's BTC address
+# A different BTC address does not match the original swap's From address.
+# native_txid 8 = observed-in submission
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "m=<:1000000BTC.BTC:500000000000000000ETH.ETH:100000000000000000"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Fox's cross-chain swap should remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "500000000000000000"
+---
+########################################################################################
+# Test 6: Fox CAN modify their own BTC swap via observed-in from Fox's BTC address
+# The legitimate owner can modify by sending a BTC tx from the same address.
+# native_txid 9 = observed-in submission
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "m=<:1000000BTC.BTC:500000000000000000ETH.ETH:300000000000000000"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Fox's cross-chain swap should now be updated
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "300000000000000000"
+---
+########################################################################################
+# Test 7: Fox CAN cancel their own BTC swap via observed-in
+# native_txid 10 = observed-in submission
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "m=<:1000000BTC.BTC:300000000000000000ETH.ETH:0"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify limit_swap_close event was emitted for the cancelled BTC swap
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events|map(select(.type == "limit_swap_close"))|length > 0
+---
+########################################################################################
+# Final: Only Fox's native RUNE swap remains (the BTC swap was cancelled)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 1
+---
+# Verify the remaining swap is Fox's native RUNE swap with the modified target from Test 2
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "9500000"
+  - .swap.tx.coins[0].asset == "THOR.RUNE"
+---
+########################################################################################
+# Verify asgard invariants are not broken
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

@@ -1,0 +1,189 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# Enable POL
+########################################################################################
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 5000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLMaxNetworkDeposit
+value: ${MAX_NETWORK_DEPOSIT=50000000000}
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: POLTargetSynthPerPoolDepth
+value: 2500
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: POLMaxPoolMovement
+value: 500000 # 50%
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: POLBuffer
+value: 500
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: tx-mimir
+key: POL-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 5
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Mint Synth to Trigger POL Add
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000000000"
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000000" # If too high, will hit MaxSynthPerPoolDepth capacity limit.
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${CURRENT_DEPOSIT=42097628741}"
+  - .pol.current_deposit|tonumber < ${MAX_NETWORK_DEPOSIT}
+  - .pol.rune_deposited == "${CURRENT_DEPOSIT}"
+  - .pol.rune_withdrawn == "0"
+  - .reserve.units == "${CURRENT_DEPOSIT}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${CURRENT_DEPOSIT=89348132446}"
+  - .pol.current_deposit|tonumber > ${MAX_NETWORK_DEPOSIT}
+  - .pol.rune_deposited == "${CURRENT_DEPOSIT}"
+  - .pol.rune_withdrawn == "0"
+  - .reserve.units == "${RESERVE_UNITS=84195257482}"
+---
+########################################################################################
+# Ensure Max Deposit is Respected
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${CURRENT_DEPOSIT}"
+  - .pol.rune_deposited == "${CURRENT_DEPOSIT}"
+  - .pol.rune_withdrawn == "0"
+  - .reserve.units == "${RESERVE_UNITS}"
+---
+########################################################################################
+# Burn Synth to Trigger Withdraw
+########################################################################################
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .|[.result[]|select(.denom=="btc/btc")] | length == 1
+  - .result[]|select(.denom=="btc/btc").amount == "${FOX_SYNTH_BALANCE=49999999}"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .|[.result[]|select(.denom=="btc/btc")] | length == 1
+  - .result[]|select(.denom=="btc/btc").amount == "${CAT_SYNTH_BALANCE=24489288}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${FOX_SYNTH_BALANCE}"
+    asset: "btc/btc"
+memo: "=:RUNE"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "${CAT_SYNTH_BALANCE}"
+    asset: "btc/btc"
+memo: "=:RUNE"
+---
+type: tx-mimir
+key: POLMaxPoolMovement
+value: 1 # 0.0001%
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "89340315148"
+  - .pol.rune_deposited == "89348132446"
+  - .pol.rune_withdrawn == "7817298"
+  - .pol.value == "78174904394"
+  - .pol.pnl == "-11165410754"
+  - .reserve.units|tonumber == ${RESERVE_UNITS}-8419525
+---
+type: tx-mimir
+key: POLMaxPoolMovement
+value: 500000 # 50%
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${CURRENT_DEPOSIT=17467050640}"
+  - .pol.rune_deposited == "${RUNE_DEPOSITED=89348132446}"
+  - .pol.rune_withdrawn == "${RUNE_WITHRDAWN=71881081806}"
+  - .pol.value == "${VALUE=0}"
+  - .pol.pnl == "-${CURRENT_DEPOSIT}"
+  - .reserve.units == "${UNITS=0}"
+---
+########################################################################################
+# Nothing else to withdraw
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.current_deposit == "${CURRENT_DEPOSIT}"
+  - .pol.rune_deposited == "${RUNE_DEPOSITED}"
+  - .pol.rune_withdrawn == "${RUNE_WITHRDAWN}"
+  - .pol.value == "${VALUE}"
+  - .pol.pnl == "-${CURRENT_DEPOSIT}"
+  - .reserve.units == "${UNITS}"

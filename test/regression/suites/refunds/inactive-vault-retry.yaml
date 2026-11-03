@@ -1,0 +1,244 @@
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "3"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults: # add extra inactive vault
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - BNB
+            - ETH
+            - DOGE
+            - TERRA
+            - AVAX
+            - GAIA
+          coins: []
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_fish }}
+          pub_key: {{ pubkey_fish }}
+          status: InactiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .| length == 1
+  - .[0].status == "ActiveVault"
+  - .[0].coins|length == 1
+  - .[0].coins[0].amount == "${ACTIVE_VAULT_AMOUNT=100000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+asserts:
+  - .status == "InactiveVault"
+  - .coins | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
+  - .balance_rune == "${START_BALANCE_RUNE=100001087646}"
+---
+########################################################################################
+# observe inbound to inactive vault
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_fish }} # inactive vault
+      coins:
+        - amount: "${INBOUND_AMOUNT=100000}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "1000"
+          asset: "BTC.BTC"
+      memo: "ADD:BTC.BTC"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_fish }} # inactive vault
+---
+type: create-blocks
+count: 1
+---
+# check changed inactive vault state - should have received the inbound
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+asserts:
+  - .status == "InactiveVault"
+  - .coins | length == 1 # Coin received
+  - .coins[0].amount == "${INBOUND_AMOUNT}"
+---
+# verify refund event was emitted
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .| [..|select(.type? == "refund")] | length == 1
+  - .|..|select(.type? == "refund") | .reason | contains("inactive vault")
+---
+# verify refund outbound is queued
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].original_memo | contains("REFUND:")
+  - .[0].vault_pub_key == "{{ pubkey_fish }}" # inactive vault
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].height == 2
+  - (.[0].coin.amount|tonumber) + (.[0].max_gas[0].amount|tonumber) == ${INBOUND_AMOUNT}
+---
+########################################################################################
+# confirm refund reschedule
+########################################################################################
+type: create-blocks
+count: 3
+---
+# outbound should still be in queue but rescheduled with new height
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].original_memo | contains("REFUND:")
+  - .[0].vault_pub_key == "{{ pubkey_fish }}" # still from inactive vault
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].height|tonumber == 5
+  - (.[0].coin.amount|tonumber) + (.[0].max_gas[0].amount|tonumber) == ${INBOUND_AMOUNT}
+---
+# inactive vault still has the coins
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+asserts:
+  - .status == "InactiveVault"
+  - .coins | length == 1
+  - .coins[0].amount == "${INBOUND_AMOUNT}"
+---
+########################################################################################
+# simulate refund success
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fish }} # inactive vault
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "90000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_fish }} # inactive vault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# confirm unchanged active vault state
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .| length == 1
+  - .[0].status == "ActiveVault"
+  - .[0].coins|length == 1
+  - .[0].coins[0].amount == "${ACTIVE_VAULT_AMOUNT}"
+---
+# check emptied inactive vault state - gas should have been deducted
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+asserts:
+  - .status == "InactiveVault"
+  - .coins | length == 1
+  - .coins[0].amount == "0"
+---
+# check the pool balances remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
+  - .balance_rune|tonumber > ${START_BALANCE_RUNE} # higher from block rewards
+---
+########################################################################################
+# simulate dropped refund after max attempts
+########################################################################################
+type: tx-mimir
+key: MaxRetiredVaultRecoveryAttempts
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_fish }} # inactive vault
+      coins:
+        - amount: "${INBOUND_AMOUNT=100000}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "1000"
+          asset: "BTC.BTC"
+      memo: "ADD:BTC.BTC"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_fish }} # inactive vault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 8
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 11
+---
+type: create-blocks
+count: 4
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

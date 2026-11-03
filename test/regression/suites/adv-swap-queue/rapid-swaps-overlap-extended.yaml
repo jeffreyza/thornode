@@ -1,0 +1,203 @@
+########################################################################################
+# Rapid Swap Overlap Extended (Runnable)
+# Adds overlap coverage for opposite-direction and mixed class overlaps.
+########################################################################################
+
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+type: env
+key: TRADE_ACCOUNTS_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: TradeAccountsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# setup: trade ETH for mixed-class overlap
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_TRADE={{ observe_txid 1 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "trade+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Scenario 1: Opposite-direction overlap on same pool in same block
+# BTC->RUNE and RUNE->BTC share BTC pool with opposite directions.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 2 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.count >= 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.state.count >= 1
+---
+########################################################################################
+# Scenario 2: Mixed class overlap on same pool
+# L1 ETH->RUNE and trade ETH~ETH->RUNE in same block.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_2={{ observe_txid 3 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "ETH~ETH"
+memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.tx.coins[0].asset == "ETH.ETH"
+  - .swap.state.count >= 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Scenario 3: Mixed class overlap on disjoint pools
+# trade ETH~ETH->BTC and BTC->RUNE in same block.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "ETH~ETH"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_3={{ observe_txid 4 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length >= 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_3}
+asserts:
+  - .swap.tx.coins[0].asset == "BTC.BTC"
+  - .swap.state.count >= 1
+---
+type: create-blocks
+count: 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

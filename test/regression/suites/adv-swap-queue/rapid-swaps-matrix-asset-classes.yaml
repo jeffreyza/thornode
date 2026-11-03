@@ -1,0 +1,174 @@
+########################################################################################
+# Rapid Swap Asset Class Matrix (Runnable)
+# Focused matrix across native, L1, and trade asset classes under rapid swaps.
+########################################################################################
+
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+type: env
+key: TRADE_ACCOUNTS_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: TradeAccountsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Setup trade balances for fox: BTC~BTC and ETH~ETH
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_TRADE_BTC={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "20000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "trade+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "${TXID_TRADE_ETH={{ observe_txid 2 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "trade+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Scenario 1: native -> L1
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .queue_type == "advanced"
+  - .swap.tx.coins[0].asset == "THOR.RUNE"
+  - .swap.target_asset == "BTC.BTC"
+  - .swap.state.count >= 1
+---
+########################################################################################
+# Scenario 2: native -> trade
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=:BTC~BTC:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .queue_type == "advanced"
+  - .swap.tx.coins[0].asset == "THOR.RUNE"
+  - .swap.target_asset == "BTC~BTC"
+  - .swap.state.count >= 1
+---
+########################################################################################
+# Scenario 3: trade -> L1
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC~BTC"
+memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .queue_type == "advanced"
+  - .swap.tx.coins[0].asset == "BTC~BTC"
+  - .swap.target_asset == "ETH.ETH"
+  - .swap.state.count >= 1
+---
+########################################################################################
+# Scenario 4: trade -> trade
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC~BTC"
+memo: "=:ETH~ETH:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .queue_type == "advanced"
+  - .swap.tx.coins[0].asset == "BTC~BTC"
+  - .swap.target_asset == "ETH~ETH"
+  - .swap.state.count >= 1
+---
+type: create-blocks
+count: 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length <= 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

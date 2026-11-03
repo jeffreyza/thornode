@@ -1,0 +1,267 @@
+########################################################################################
+# Stable Reserve - TrySwap direct fill
+#
+# Asserts the direct-fill market swap logic. When the Stable Reserve is enabled
+# and holds inventory of the target asset, a market swap between two eligible
+# stables (USDC <-> USDT) is intercepted and filled 1:1 from module inventory,
+# bypassing the pools. Contributor credits remain recorded but do not reserve
+# inventory from direct fills. Band membership of both legs (each within the
+# depeg tolerance of $1) is the sole price condition, so two eligible stables
+# fill 1:1 even when they sit on opposite edges of the band.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable TOR anchors and Stable Reserve
+########################################################################################
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: StableReserveEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# seed credited contributor inventory: 1000 USDC and 900 USDT
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 3
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "900000000"
+          asset: "ETH.USDT-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1000000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "900000000"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "900000000"
+---
+########################################################################################
+# SCENARIO 1: Credited inventory is spendable
+# The Stable Reserve holds USDT, and all of it is contributor credit. Direct fill
+# can still spend that inventory while the contributor credit remains recorded.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 4
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "=:ETH.USDT-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert direct fill: swap event has stable_reserve=true, target inventory was
+# spent, source inventory grew, and contributor credit stayed unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1100000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "800000000"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "900000000"
+---
+########################################################################################
+# SCENARIO 2: Direct fill market swap (USDC -> USDT)
+# Both prices are exactly 1.00, and the reserve has enough USDT inventory.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 5
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "=:ETH.USDT-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+    block_height: 6
+    finalise_height: 6
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert direct fill: swap event has stable_reserve=true, source inventory grew,
+# and contributor credit stayed unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1200000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "700000000"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "900000000"
+---
+########################################################################################
+# SCENARIO 3: Opposite edges of the tolerance band still fill (USDC=0.99, USDT=1.01)
+# Both stables sit inside the depeg tolerance band ($1 ± 1%), just on opposite
+# edges. Band membership of both legs is the sole price condition, so the direct
+# fill proceeds 1:1 — there is no relative source-vs-target value guard.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "0.99"
+  USDT: "1.01"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 6
+txs:
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "=:ETH.USDT-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert direct fill: swap event has stable_reserve=true, source inventory grew by
+# the 100000000 USDC taken in, and contributor credit stayed unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1300000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "600000000"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "900000000"
+---
+########################################################################################
+# The direct-fill swaps intentionally leave ETH.USDT outbounds pending.
+########################################################################################
+type: fail-export-invariants

@@ -1,0 +1,204 @@
+########################################################################################
+# Config
+########################################################################################
+
+volumes:
+  genesis-thornode: {}
+  genesis-bifrost: {}
+  validator-1-thornode: {}
+  validator-1-bifrost: {}
+  validator-2-thornode: {}
+  validator-2-bifrost: {}
+  validator-3-thornode: {}
+  validator-3-bifrost: {}
+
+########################################################################################
+# Services
+########################################################################################
+
+services:
+  _thorchain: &thorchain-defaults
+    profiles:
+      - _
+    restart: unless-stopped
+    image: registry.gitlab.com/thorchain/thornode:stagenet-2.137.3
+    environment: &thorchain-environment
+      NET: stagenet
+      CHAIN_ID: thorchain
+      SIGNER_NAME: thorchain
+      SIGNER_PASSWD: password
+      THOR_SEED_NODES_ENDPOINT: ""
+
+      # "dog" mnemonic addresses for faucet
+      FAUCET: sthor1zf3gsk7edzwl9syyefvfhle37cjtql3585mpmq
+
+      # reuse 9R stagenet router contract deployments, or deploy your own new ones
+      ETH_CONTRACT: "0xB11a1735C2e3BCC5FC8c1d147fb64629d3d0caC5"
+      BSC_CONTRACT: "0x00335da4078f696b98ff619616f1c558e57b9e22"
+      AVAX_CONTRACT: "0xd6a6c0b3bb4150a98a379811934e440989209db6"
+
+  ######################################################################################
+  # Genesis
+  ######################################################################################
+
+  # ------------------------------ thornode ------------------------------
+
+  genesis-thornode: &genesis-thornode
+    <<: *thorchain-defaults
+    profiles:
+      - genesis
+    ports:
+      - 27147:27147
+      - 27146:27146
+      - 1317:1317
+      - 6060:6060
+    volumes:
+      - ./mnt:/mnt
+      - genesis-thornode:/root/.thornode
+    entrypoint: /scripts/genesis.sh
+
+    environment: &genesis-thornode-environment
+      <<: *thorchain-environment
+      SEED: thornode
+
+  # ------------------------------ bifrost ------------------------------
+
+  genesis-bifrost: &genesis-bifrost
+    <<: *thorchain-defaults
+
+    profiles:
+      - genesis
+    ports:
+      - 5040:5040
+      - 6040:6040
+    entrypoint: /scripts/bifrost.sh
+    volumes:
+      - genesis-bifrost:/var/data/bifrost
+      - genesis-thornode:/root/.thornode
+    command: ["bifrost"]
+
+    environment: &genesis-bifrost-environment
+      <<: *thorchain-environment
+
+      CHAIN_API: genesis-thornode:1317
+      CHAIN_RPC: genesis-thornode:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: genesis-thornode:50051
+
+      BIFROST_CHAINS_AVAX_DISABLED: "false"
+      BIFROST_CHAINS_AVAX_RPC_HOST: https://api.avax.network/ext/bc/C/rpc
+
+      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_RPC_HOST: ""
+      BIFROST_CHAINS_GAIA_COSMOS_GRPC_HOST: ""
+
+      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BSC_RPC_HOST: ""
+
+      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_BASE_RPC_HOST: ""
+
+      BIFROST_CHAINS_BTC_DISABLED: "true"
+      BIFROST_CHAINS_BTC_RPC_HOST: ""
+
+      BIFROST_CHAINS_DOGE_DISABLED: "true"
+      BIFROST_CHAINS_DOGE_RPC_HOST: ""
+
+      BIFROST_CHAINS_BCH_DISABLED: "true"
+      BIFROST_CHAINS_BCH_RPC_HOST: ""
+
+      BIFROST_CHAINS_LTC_DISABLED: "true"
+      BIFROST_CHAINS_LTC_RPC_HOST: ""
+
+      BIFROST_CHAINS_ETH_DISABLED: "true"
+      BIFROST_CHAINS_ETH_RPC_HOST: ""
+
+  ######################################################################################
+  # Validator-1
+  ######################################################################################
+
+  validator-1-thornode: &validator-1-thornode
+    <<: *genesis-thornode
+    profiles:
+      - validator-1
+    ports: []
+    environment: &validator-1-thornode-environment
+      <<: *genesis-thornode-environment
+      PEER: genesis-thornode
+      SEEDS: genesis-thornode
+    volumes:
+      - ./mnt:/mnt
+      - validator-1-thornode:/root/.thornode
+    entrypoint: /scripts/validator.sh
+
+  validator-1-bifrost: &validator-1-bifrost
+    <<: *genesis-bifrost
+    profiles:
+      - validator-1
+    environment: &validator-1-bifrost-environment
+      <<: *genesis-bifrost-environment
+      PEER: genesis-bifrost
+      CHAIN_API: validator-1-thornode:1317
+      CHAIN_RPC: validator-1-thornode:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: validator-1-thornode:50051
+    ports:
+      - 5040
+      - 6040
+    volumes:
+      - validator-1-bifrost:/var/data/bifrost
+      - validator-1-thornode:/root/.thornode
+
+  ######################################################################################
+  # Validator-2
+  ######################################################################################
+
+  validator-2-thornode:
+    <<: *validator-1-thornode
+    profiles:
+      - validator-2
+    ports: []
+    environment:
+      <<: *validator-1-thornode-environment
+    volumes:
+      - ./mnt:/mnt
+      - validator-2-thornode:/root/.thornode
+
+  validator-2-bifrost:
+    <<: *validator-1-bifrost
+    profiles:
+      - validator-2
+    environment:
+      <<: *validator-1-bifrost-environment
+      CHAIN_API: validator-2-thornode:1317
+      CHAIN_RPC: validator-2-thornode:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: validator-2-thornode:50051
+    volumes:
+      - validator-2-bifrost:/var/data/bifrost
+      - validator-2-thornode:/root/.thornode
+
+  ######################################################################################
+  # Validator-3
+  ######################################################################################
+
+  validator-3-thornode:
+    <<: *validator-1-thornode
+    profiles:
+      - validator-3
+    ports: []
+    environment:
+      <<: *validator-1-thornode-environment
+    volumes:
+      - ./mnt:/mnt
+      - validator-3-thornode:/root/.thornode
+
+  validator-3-bifrost:
+    <<: *validator-1-bifrost
+    profiles:
+      - validator-3
+    environment:
+      <<: *validator-1-bifrost-environment
+      CHAIN_API: validator-3-thornode:1317
+      CHAIN_RPC: validator-3-thornode:27147
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: validator-3-thornode:50051
+    volumes:
+      - validator-3-bifrost:/var/data/bifrost
+      - validator-3-thornode:/root/.thornode

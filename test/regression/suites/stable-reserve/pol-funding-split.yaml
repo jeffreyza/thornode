@@ -1,0 +1,91 @@
+########################################################################################
+# Stable Reserve - POL income funding split
+#
+# When the Stable Reserve is enabled, StableReservePOLShareBps of the POL system-
+# income deduct is diverted from the Reserve to the stable_reserve module (the
+# remainder still goes to pol_reserve). System income accrues every block from
+# emission, so the split runs each block once enabled - no swap is needed. This
+# path is a pure RUNE module-to-module transfer and needs no oracle price. The
+# suite also asserts the gate: with the feature disabled, the entire POL share
+# flows to pol_reserve and the stable_reserve receives nothing.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - .enabled == true
+  - .pol_share_bps == "0"
+  - .rune_balance == "0"
+---
+########################################################################################
+# enable POL Reserve system income (10%) and route 25% of it to the Stable Reserve
+########################################################################################
+type: tx-mimir
+key: POLReserveSystemIncomeBps
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: StableReservePOLShareBps
+value: 2500
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# in this block the Reserve splits POL income: 25% -> stable_reserve, 75% -> pol_reserve
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")] | length == 1
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")][0].sender == "{{ addr_module_reserve }}"
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")] | length == 1
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")][0].sender == "{{ addr_module_reserve }}"
+  # the stable reserve received exactly 25% of the combined POL system income
+  - ([..|select(.type?=="transfer")|select(.recipient=="{{ addr_module_stable_reserve }}").amount|rtrimstr("rune")|tonumber]|add) as $s | ([..|select(.type?=="transfer")|select(.recipient=="{{ addr_module_pol_reserve }}").amount|rtrimstr("rune")|tonumber]|add) as $p | ($s > 0) and ($p > 0) and ((10000 * $s / ($s + $p))|round == 2500)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - .pol_share_bps == "2500"
+  - .rune_balance|tonumber > 0
+---
+########################################################################################
+# disable the Stable Reserve: the entire POL share now flows to pol_reserve
+########################################################################################
+type: tx-mimir
+key: StableReserveEnabled
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  # no transfer to the stable_reserve module while disabled
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")] | length == 0
+  # pol_reserve still receives the POL income
+  - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")] | length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - .enabled == false

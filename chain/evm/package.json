@@ -1,0 +1,47 @@
+{
+  "name": "thorchain-router-ethereum",
+  "version": "1.0.0",
+  "description": "THORChain Router smart contract deployment and testing suite",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "// RouterV4 Deployment": "==========================================",
+    "v4:deploy": "node deployment/routerv4/deploy-create2-nicks-v4-all.js",
+    "v4:address": "node deployment/routerv4/calculate-create2-address-v4.js",
+    "// RouterV6 Deployment": "==========================================",
+    "v6:deploy": "node deployment/routerv6/deploy-all-chains.js",
+    "v6:address": "node deployment/routerv6/calculate-create2-address.js",
+    "// RouterV6 Testing": "==========================================",
+    "v6:test": "hardhat run deployment/routerv6/test-mainnet-functionality.js --network ethereum",
+    "v6:balances": "hardhat run deployment/routerv6/utils-check-balances.js --network ethereum",
+    "// Migration Testing": "=========================================",
+    "migration:test": "hardhat run deployment/migration/router-v4-to-v6-migration-test.js --network ethereum",
+    "// Utilities": "===============================================",
+    "check-factory": "hardhat run deployment/routerv6/utils-check-factory.js",
+    "// Legacy Commands": "==========================================",
+    "deploy": "npm run v6:deploy",
+    "calculate-address": "npm run v6:address",
+    "test-mainnet": "npm run v6:test"
+  },
+  "keywords": [
+    "thorchain",
+    "router",
+    "ethereum",
+    "hardhat",
+    "solidity"
+  ],
+  "author": "THORChain",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "chai": "^4.5.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.7.0",
+    "hardhat": "^2.17.1"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}

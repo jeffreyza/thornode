@@ -1,0 +1,200 @@
+{{ template "default-state.yaml" }}
+---
+# 10 AVAX == 1000 RUNE
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "200000000000"
+              denom: rune
+        - address: {{ addr_thor_dog }}
+          coins:
+            - denom: rune
+              amount: "4500000000000"
+    thorchain:
+      liquidity_providers:
+        - asset: AVAX.AVAX
+          asset_address: {{ addr_avax_cat }}
+          asset_deposit_value: "1000000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+        - asset: AVAX.USDX-0X9999999999999999999999999999999999999999
+          asset_address: {{ addr_avax_cat }}
+          asset_deposit_value: "100000000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: AVAX.AVAX
+          balance_asset: "1000000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+        - LP_units: "100000000000"
+          asset: AVAX.USDX-0X9999999999999999999999999999999999999999
+          balance_asset: "100000000000"
+          balance_rune: "100000000000"
+          decimals: "6"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: AVAX
+          transaction_fee_rate: "80"
+          transaction_size: "80000"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - AVAX
+          coins:
+            - amount: "1000000000"
+              asset: AVAX.AVAX
+              decimals: "8"
+            - amount: "100000000000"
+              asset: AVAX.USDX-0X9999999999999999999999999999999999999999
+              decimals: "6"
+          inbound_tx_count: "1"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# swap to AVAX token
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET=AVAX.USDX-0X9999999999999999999999999999999999999999}:{{ addr_avax_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].coin.amount == "${OUT_AMOUNT=11291804900}"
+---
+########################################################################################
+# observe outbound using more than max gas, but under MaxAVAXGas is ok
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: AVAX
+      from_address: {{ addr_avax_dog }}
+      to_address: {{ addr_avax_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "${ASSET}"
+          decimals: 8
+      gas:
+        - amount: "49999999"
+          asset: "AVAX.AVAX"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTAVAXCHAIN|not
+---
+########################################################################################
+# swap to AVAX token
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET}:{{ addr_avax_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].coin.amount == "${OUT_AMOUNT=9019300200}"
+---
+########################################################################################
+# observe outbound using more than MaxAVAXGas should slash and leave in queue
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: AVAX
+      from_address: {{ addr_avax_dog }}
+      to_address: {{ addr_avax_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "${ASSET}"
+          decimals: 8
+      gas:
+        - amount: "10000000000" # should trigger slash >= MaxAVAXGas
+          asset: "AVAX.AVAX"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1 # outbound remains in queue
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="slash")]|length >= 1' # slash event
+---
+########################################################################################
+# Verify halt pattern: HALTSIGNINGAVAX and HaltAVAXTrading should be set
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGAVAX > 0 # signing halted
+  - .HALTAVAXTRADING > 0 # trading halted
+  - .HALTAVAXCHAIN|not # chain is NOT halted

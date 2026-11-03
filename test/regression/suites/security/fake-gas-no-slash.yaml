@@ -1,0 +1,88 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# get initial vault bond amounts
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+params: {}
+status: 200
+asserts:
+  - .|length == 1 # single node
+  - .[] | select(.node_address == "{{ addr_thor_dog }}") | .total_bond == "5000000000000"
+---
+########################################################################################
+# observe a fake gas transaction (EVM, gas asset, amount=1 wei dust, external to)
+# this simulates bifrost sending a fake gas tx to account for gas spent on a failed outbound
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }} # external
+      coins:
+        - amount: "1" # 1 in 8-decimal format (THORChain representation)
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "21000" # standard ETH tx gas in wei
+          asset: "ETH.ETH"
+      memo: "OUT:{{ observe_txid 1 }}" # bifrost creates memo OUT:txhash for failed tx observations
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# verify cancel gas was accounted in the outbound fee multiplier
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+asserts:
+  - .[0].fee_spent_rune == "2100034"
+---
+########################################################################################
+# verify no slashing occurred for fake gas tx
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+params: {}
+status: 200
+asserts:
+  - .|length == 1
+  - .[] | select(.node_address == "{{ addr_thor_dog }}") | .total_bond == "5000000000000" # no slashing for fake gas tx
+---
+########################################################################################
+# verify no security event and no slash event was emitted for fake gas tx
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.end_block_events[] | select(.type == "security")]|length == 0' # no security for fake gas
+  - '[.txs[].result.events[] | select(.type == "slash")]|length == 0' # no slash for fake gas
+---
+########################################################################################
+# verify correct vault and pool balances
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-21000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset|tonumber == 1000000000-21000

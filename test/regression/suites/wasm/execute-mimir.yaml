@@ -1,0 +1,363 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "counter.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+# Store two codes to get two checksyms
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "extended.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+# 2 Instantiations of each
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 2
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 2
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/1/contracts
+asserts:
+  - .contracts[0] == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .contracts[1] == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/2/contracts
+asserts:
+  - .contracts[0] == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+  - .contracts[1] == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+---
+# Check all are executable
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].new_value == "1"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+  - .txs[0].result.events[5].new_value == "1"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+  - .txs[0].result.events[5].new_value == "1"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+  - .txs[0].result.events[5].new_value == "1"
+---
+# Disable a single contract
+type: tx-mimir
+key: HaltWasmContract-w58u9f
+gas: 100000
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - ."HALTWASMCONTRACT-W58U9F" == 1
+---
+# Check matching one is not executable, but others still are
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("contract halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+  - .txs[0].result.events[5].new_value == "2"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+  - .txs[0].result.events[5].new_value == "2"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+  - .txs[0].result.events[5].new_value == "2"
+---
+# Disable the checksum for code id 2
+type: tx-mimir
+key: HaltWasmCs-4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA
+gas: 100000
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - ."HALTWASMCS-4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA" == 1
+---
+# Check only one is still executable
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("contract halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+  - .txs[0].result.events[5].new_value == "3"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("checksum halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("checksum halted: unauthorized")'
+---
+# Now halt everything
+type: tx-mimir
+key: HaltWasmGlobal
+gas: 100000
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTWASMGLOBAL == 1
+---
+# Check nothing can be used
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("wasm halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("wasm halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("wasm halted: unauthorized")'
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log|contains("wasm halted: unauthorized")'

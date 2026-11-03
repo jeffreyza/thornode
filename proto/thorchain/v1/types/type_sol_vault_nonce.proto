@@ -1,0 +1,49 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "gogoproto/gogo.proto";
+
+// SolVaultNonce is a Solana vault's current durable nonce as committed by
+// observer supermajority. Signers build durable-nonce outbounds from this value
+// (read at the keysign height), so every keysign party signs identical bytes.
+message SolVaultNonce {
+  string vault_pub_key = 1
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  // seed-derived durable-nonce account address
+  string nonce_account = 2;
+  // stored durable nonce value (the value a durable tx bakes in as its
+  // blockhash)
+  string nonce = 3;
+  // Solana slot of the vault transaction that set this value; only increases
+  int64 slot = 4;
+  // THORChain height at which this value was committed
+  int64 updated_height = 5;
+  // the vault transaction that set this value (create or durable outbound)
+  string set_by_tx = 6
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
+}
+
+// SolNonceAttestVoter collects MsgSolNonceAttest votes for one
+// (vault, nonce account, nonce, last tx, slot) value. The slot is part of the
+// value: votes must be identical to count together.
+message SolNonceAttestVoter {
+  string vault_pub_key = 1
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  string nonce_account = 2;
+  string nonce = 3;
+  string last_tx = 4
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
+  // signers (node addresses) that attested this exact value
+  repeated string signers = 5;
+  // Solana slot of last_tx
+  int64 slot = 6;
+  // THORChain height at which this value was committed (0 = not yet)
+  int64 committed_height = 7;
+}

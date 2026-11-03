@@ -1,0 +1,44 @@
+{
+  "skill_name": "protocol-upgrade",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We found ~40 LP records on mainnet with corrupted units from last month's bug. I want to fix them as part of the next release. What do I need to add?",
+      "expected_output": "A store migration: bump ConsensusVersion() in x/thorchain/module.go, add cfg.RegisterMigration for the new N, implement MigrateNtoN+1 in migrations_common.go with a mainnet-specific tail (or in all four build-tagged migrations files), call LoadManagerIfNecessary first, use a run/apply pair with CacheContext that soft-skips and logs on drift, pin values from live state, warn about the guard-flag footgun (module version advances even if skipped), and test with -tags mainnet via make test-network-specific, updating the -check.f filter and test-quality-inventory SELECTIONS if the suite name lacks 'Migrate'.",
+      "files": [],
+      "assertions": [
+        "Bumps ConsensusVersion() in x/thorchain/module.go and adds a RegisterMigration call",
+        "Names the build-tagged migrations files (migrations.go, migrations_mainnet.go, migrations_stagenet.go, migrations_chainnet.go) or migrations_common.go",
+        "Says the migration should soft-skip/log on state drift rather than return an error that halts the upgrade",
+        "Mentions testing with the mainnet build tag",
+        "Does not propose a version.GTE gate or a keeper_migrate.go MigrateStoreFromV2ToV3 function"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm cutting the 3.21.0 release which changes swap fee logic. Walk me through the version bump and how it gets activated on the network.",
+      "expected_output": "Bump the root `version` file and openapi/openapi.yaml version (lint checks they match), make sure app/upgrades.go registers the 3.21.0 upgrade (empty list auto-registers app.Version(), or standard.NewUpgrade(\"3.21.0\"); a stale entry blocks auto-registration), no ConsensusVersion bump unless state changes. Activation: validators propose-upgrade/approve-upgrade, 2/3 approval schedules the x/upgrade plan, chain halts at the height, nodes restart on the new binary, upgrade handler runs UpdateActiveValidatorVersions then RunMigrations. The fee change itself is not version-gated.",
+      "files": [],
+      "assertions": [
+        "Bumps the root `version` file (not a version/version.go file)",
+        "Mentions openapi/openapi.yaml version must match",
+        "Mentions app/upgrades.go Upgrades list registering the new upgrade name",
+        "Describes propose-upgrade / approve-upgrade with 2/3 validator approval and a halt at the upgrade height",
+        "Does not suggest gating the swap fee change on a semver comparison or using `set-mimir Version`"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We're adding a new cosmos SDK module with its own KV store in the next release. How do I make sure the store key gets created at upgrade time?",
+      "expected_output": "Create app/upgrades/<version>/ (dir name must equal the version file or scripts/lint.sh fails), return upgrades.Upgrade with UpgradeName, CreateUpgradeHandler: standard.CreateUpgradeHandler (or custom that still calls UpdateActiveValidatorVersions), StoreUpgrades.Added with the module store key; reference it from app/upgrades.go replacing the standard entry; RegisterUpgradeHandlers sets UpgradeStoreLoader when the upgrade name matches. Example: c17452b9d app/upgrades/3.4.0/denom.go. Remove the package after the release.",
+      "files": [],
+      "assertions": [
+        "Creates a package under app/upgrades/<version>/ with StoreUpgrades Added",
+        "States the directory name must match the `version` file (scripts/lint.sh)",
+        "Does not modify StoreUpgrades inside standard.NewUpgrade",
+        "Mentions UpdateActiveValidatorVersions must still run before RunMigrations if a custom handler is written",
+        "Does not reference app.setupUpgradeHandlers or a migrateToV3 function in app/app.go"
+      ]
+    }
+  ]
+}

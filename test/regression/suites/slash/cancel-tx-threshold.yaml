@@ -1,0 +1,123 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Set PauseOnSlashThreshold to a low value (100 RUNE = 10000000000)
+# This test verifies that cancel transactions do NOT trigger slashing or halt
+# mimirs even when gas costs are very high and exceed the threshold
+########################################################################################
+type: tx-mimir
+key: PauseOnSlashThreshold
+value: 10000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/PAUSEONSLASHTHRESHOLD
+asserts:
+  - . == 10000000000
+---
+########################################################################################
+# Create a swap that will generate an outbound (this will be the "stuck" transaction)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET=ETH.USDX-0X9999999999999999999999999999999999999999}:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0]|.coin.amount|tonumber > 11000000000
+---
+########################################################################################
+# Observe a cancel transaction for the stuck outbound
+# Cancel tx has:
+# 1. to_address and from_address are both the vault address (vault-to-vault)
+# 2. No memo
+# 3. Amount = 1000 (DustThreshold - cancel tx has 0 on chain, bifrost converts to DustThreshold)
+# 4. Gas asset (ETH.ETH)
+# 5. Very high gas (200000000) that exceeds PauseOnSlashThreshold
+# This simulates a stuck transaction being cancelled with high gas costs
+# Expected: NO slashing, NO halt mimirs (cancel txs are exempt)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000" # DustThreshold - cancel tx has 0 on chain but bifrost converts to DustThreshold
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "200000000"
+          asset: "ETH.ETH"
+      memo: ""
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# verify cancel gas was accounted in the outbound fee multiplier
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+asserts:
+  - .[0].fee_spent_rune == "20000118594"
+---
+########################################################################################
+# Verify the original outbound remains in queue (wasn't fully processed)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+---
+########################################################################################
+# Verify NO slashing occurred (cancel transactions should not be slashed)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="slash")]|length == 0'
+---
+########################################################################################
+# Verify HALTSIGNINGETH mimir was NOT set (cancel tx doesn't trigger slashing/halt)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH|not
+  - .HALTETHTRADING|not
+---
+########################################################################################
+# verify correct vault and pool balances
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-200000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset|tonumber == 1000000000-200000000

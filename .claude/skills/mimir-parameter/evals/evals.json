@@ -1,0 +1,43 @@
+{
+  "skill_name": "mimir-parameter",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "How do I override a mimir as admin on stagenet so I don't have to wait for node votes?",
+      "expected_output": "States that there is no admin mimir on develop: only active-node MsgMimir votes set mimirs (x/thorchain/handler_mimir.go). Notes the CLI help text 'admin only' is stale. Offers real options: vote from enough active nodes (operational keys need OperationalVotesMin, default 3; economic keys need a 2/3 supermajority), or use the mocknet env-var fallback for local testing.",
+      "files": [],
+      "assertions": [
+        "Says no admin mimir tier exists and does not describe a set-admin-mimir command or admin key",
+        "Explains operational (OperationalVotesMin, default 3) vs economic (2/3 supermajority) thresholds",
+        "References IsOperationalMimir in x/thorchain/keeper/v1/keeper_mimir.go to determine the class",
+        "Does not claim a priority order of admin > node > constant"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Two of our active nodes voted HaltBTCTrading=1 yesterday. A churn happened this morning, then a third node voted HaltBTCTrading=1, but the mimir still isn't set and nodes_all only shows one vote. What happened?",
+      "expected_output": "Explains HaltBTCTrading is operational (contains HALT), so PurgeOperationalNodeMimirs at churn (manager_validator_current.go) deleted the first two votes. The third vote alone is below OperationalVotesMin (default 3), so ValueOfOperational returns -1 and nothing is set. Two more nodes need to re-vote 1.",
+      "files": [],
+      "assertions": [
+        "Identifies HaltBTCTrading as operational via the HALT substring rule",
+        "Names PurgeOperationalNodeMimirs running at churn as the reason the earlier votes disappeared",
+        "Explains one vote is below OperationalVotesMin (default 3) so nothing is set, and the fix is re-voting",
+        "Does not invent a minVotes = len/3 rule or a GetMimirV2 function"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add a new tunable MaxFooPerBlock (default 50) that the swap queue reads, and a regression test that sets it to 10 via node votes.",
+      "expected_output": "Adds MaxFooPerBlock to the ConstantName iota in constants/constant_values.go, default 50 in NewConstantValue() in constants/constants_v1.go, runs make go-generate for constantname_string.go, reads with k.GetConfigInt64(ctx, constants.MaxFooPerBlock), documents in docs/mimir.md. Regression suite uses tx-mimir blocks with key/value/signer for enough nodes, then a check against http://localhost:1317/thorchain/mimir asserting .MAXFOOPERBLOCK == 10.",
+      "files": [],
+      "assertions": [
+        "Puts the enum entry in constants/constant_values.go and the default in constants/constants_v1.go NewConstantValue (not a constants_v3.go)",
+        "Regenerates constantname_string.go with make go-generate rather than hand-editing",
+        "Reads the value with GetConfigInt64",
+        "Uses tx-mimir blocks and an asserts check with an upper-case key, not an 'expected:' field",
+        "Uses enough votes for an economic key (2/3 of active validators) since MaxFooPerBlock is not operational",
+        "Does not add a version gate"
+      ]
+    }
+  ]
+}

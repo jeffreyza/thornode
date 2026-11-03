@@ -1,0 +1,132 @@
+{{ template "default-state.yaml" }}
+# The following tests use the `bindings.wasm` contract, which implements these following interfaces.
+# Messages and query results are simply passed through the contract layer for testing
+
+# pub fn execute(
+#     _deps: DepsMut,
+#     _env: Env,
+#     _info: MessageInfo,
+#     msg: ExecuteMsg,
+# ) -> Result<Response, ContractError> {
+#     match msg {
+#         ExecuteMsg::Any(any_msg) => Ok(Response::default().add_message(CosmosMsg::Any(any_msg))),
+#     }
+# }
+
+# pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+#     match msg {
+#         QueryMsg::Grpc { path, data } => to_json_binary(&deps.querier.query_grpc(path, data)?),
+#     }
+# }
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "bindings.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "bindings"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+# Schedule a message to be delivered later
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAEaEnsiZG8iOiJzb21ldGhpbmcifQ==",
+      },
+  }
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].type == "message"
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
+  - .txs[0].result.events[5].type == "schedule_add"
+  - .txs[0].result.events[5].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].after == "1"
+  - .txs[0].result.events[5].height == "6"
+  - .txs[0].result.events[5].msg == "{\"do\":\"something\"}"
+---
+type: create-blocks
+count: 1
+---
+# The scheduled invalid message fails without committing execution events.
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .end_block_events | length == 0
+---
+type: create-blocks
+count: 1
+---
+# Test recursive scheduling: execute in the next block and schedule another message one block later.
+# In practice, a contract will construct this message itself and emit it each time it wants to be re-called
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAEazgF7ImFueSI6eyJ0eXBlX3VybCI6ICIvdGhvcmNoYWluLnNjaGVkdWxlci52MS5Nc2dTY2hlZHVsZUV4ZWN1dGVDb250cmFjdCIsInZhbHVlIjogIkNrQjBkR2h2Y2pFMGFHb3lkR0YyY1RobWNHVnpaSGQ0ZUdOMU5EUnlkSGt6YUdnNU1IWm9kV3B5ZG1OdGMzUnNOSHB5TTNSNGJXWjJkemx6ZHpVNGRUbG1FQUVhRW5zaVpHOGlPaUp6YjIxbGRHaHBibWNpZlE9PSJ9fQ==",
+      },
+  }
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5].type == "schedule_add"
+  - .txs[0].result.events[5].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].after == "1"
+  - .txs[0].result.events[5].height == "9"
+  - .end_block_events | length == 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .end_block_events[0].type == "schedule_start"
+  - .end_block_events[0].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .end_block_events[1].type == "execute"
+  - .end_block_events[1]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .end_block_events[2].type == "schedule_add"
+  - .end_block_events[2].msg == "{\"do\":\"something\"}"
+  - .end_block_events[2].after == "1"
+  - .end_block_events[2].height == "10"
+  - .end_block_events[3].type == "schedule_end"

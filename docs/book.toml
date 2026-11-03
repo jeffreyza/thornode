@@ -1,0 +1,51 @@
+[book]
+title = "THORChain Dev Docs"
+description = "Developer Documentation for THORChain. Integrate with THORChain; Cross-Chain Swapping."
+language = "en"
+authors = ["THORChain"]
+src = ""
+
+[preprocessor.katex]
+after = ["links"]
+inline-delimiter = { left = "$$$", right = "$$$" }
+
+[preprocessor.admonish]
+command = "mdbook-admonish"
+assets_version = "3.0.2"    # do not edit: managed by `mdbook-admonish install`
+
+[preprocessor.embed]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+default-theme = "latte"
+preferred-dark-theme = "coal"
+git-repository-url = "https://gitlab.com/thorchain/thornode/"
+git-repository-icon = "fa-gitlab"
+edit-url-template = "https://gitlab.com/thorchain/thornode/-/edit/develop/docs/{path}"
+no-section-label = true
+additional-css = [
+  "./theme/catppuccin.css",
+  "./theme/mdbook-admonish.css",
+  "./theme/catppuccin-admonish.css",
+]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+# Used for link checking
+# [output.linkcheck]
+# traverse-parent-directories = true # Note:Cloudflare will cause valid links to fail.
+# follow-web-links = true
+# exclude = [ "./archived/*.*" ] # not updating archived files
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-hierarchical-headings = true
+
+[output.html.fold]
+enable = true # whether or not to enable section folding
+level = 1
+
+[output.html.print]
+enable = true # include support for printable output

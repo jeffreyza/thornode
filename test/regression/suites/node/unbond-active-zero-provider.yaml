@@ -1,0 +1,123 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "9"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_frog }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_fish }}
+          coins:
+            - denom: rune
+              amount: "100000000"
+        - address: {{ addr_thor_frog }}
+          coins:
+            - denom: rune
+              amount: "100000000"
+    thorchain:
+      bond_providers:
+        - node_address: {{ addr_thor_dog }}
+          node_operator_fee: "0"
+          providers:
+            - bond: "4999999000000"
+              bond_address: {{ addr_thor_dog }}
+            - bond: "0"
+              bond_address: {{ addr_thor_fish }}
+            - bond: "1000000"
+              bond_address: {{ addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
+###############################################################################
+# Test 1: Non-operator cannot remove a bond provider while node is active
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "UNBOND:{{ addr_thor_dog }}:0:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("active or ready status")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers | length == 3
+  - .bond_providers.providers[] |
+    select(.bond == "0" and .bond_address == "{{ addr_thor_fish }}")
+---
+###############################################################################
+# Test 2: Operator cannot remove a bond provider with non-zero balance while
+#         node is active
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "UNBOND:{{ addr_thor_dog }}:0:{{ addr_thor_frog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("active or ready status")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers | length == 3
+  - .bond_providers.providers[] |
+    select(.bond_address == "{{ addr_thor_frog }}")
+---
+###############################################################################
+# Test 3: Operator can remove a zero-balance bond provider while node is active
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "UNBOND:{{ addr_thor_dog }}:0:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers | length == 2
+  - (.bond_providers.providers | map(select(.bond_address == "{{ addr_thor_fish }}")) | length) == 0
+  - .bond_providers.providers[] |
+    select(.bond == "4999999000000" and .bond_address == "{{ addr_thor_dog }}")
+  - .bond_providers.providers[] |
+    select(.bond == "1000000" and .bond_address == "{{ addr_thor_frog }}")

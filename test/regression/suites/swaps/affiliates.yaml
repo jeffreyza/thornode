@@ -1,0 +1,125 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap rune to btc with affiliate
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::{{ addr_thor_pig }}:500"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="affiliate_fee")] | length == 1
+  - ..|select(.type?=="affiliate_fee").asset == "BTC.BTC"
+  - ..|select(.type?=="affiliate_fee").rune_address == "{{ addr_thor_pig }}"
+  - ..|select(.type?=="affiliate_fee").fee_bps == "500"
+  - ..|select(.type?=="affiliate_fee").fee_amount == "413221"
+  - ..|select(.type?=="affiliate_fee").gross_amount == "8264426"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ native_txid -1 }}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=7844205}"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_PIG=490806795}
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# swap btc to rune with affiliate
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}::{{ addr_thor_pig }}:500"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${BAL_PIG} + ${FEE_AMT=1248140094}
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "2513712661789"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="affiliate_fee")] | length == 1
+  - ..|select(.type?=="affiliate_fee").asset == "THOR.RUNE"
+  - ..|select(.type?=="affiliate_fee").rune_address == "{{ addr_thor_pig }}"
+  - ..|select(.type?=="affiliate_fee").fee_bps == "500"
+  - ..|select(.type?=="affiliate_fee").fee_amount == "${FEE_AMT}"

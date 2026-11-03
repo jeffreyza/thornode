@@ -1,0 +1,130 @@
+type: env
+key: THOR_API_LOGS_RETAIN_BLOCKS
+value: "3"
+---
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 4
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "100000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# /thorchain/logs: debug level returns the thorchain module lines captured for the
+# requested blocks, tagged with their height and module.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 4
+  end: 5
+  level: debug
+asserts:
+  - length > 0
+  - .[0].height == 4
+  - .[-1].height == 5
+  - '[.[] | .level] | unique | inside(["debug", "info", "warn", "error"])'
+  - '[.[] | select(.module != "x/thorchain")] | length == 0'
+  - '[.[] | select(.height == 4 and .msg == "End Block")] | length == 1'
+  - '[.[] | select(.height == 5 and .msg == "receive MsgSend")] | length == 1'
+---
+########################################################################################
+# modules selects cosmos sdk modules; the thorchain module is only the default. This
+# scenario emits no x/bank lines, so this only proves the param is accepted and thorchain
+# lines are excluded; sdk capture itself is covered by unit tests in log/.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 4
+  end: 5
+  level: debug
+  modules: x/bank
+asserts:
+  - '[.[] | .module] | unique | inside(["x/bank"])'
+  - '[.[] | select(.msg == "receive MsgSend")] | length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 4
+  end: 5
+  level: debug
+  modules: x/nope
+asserts:
+  - length == 0
+---
+########################################################################################
+# Block 1 is outside retain_blocks=3 at height 5 and has been pruned.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 1
+  end: 1
+  level: debug
+asserts:
+  - length == 0
+---
+########################################################################################
+# Defaults: start = end = last committed height, level = info (no debug lines).
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+asserts:
+  - '[.[] | select(.level == "debug")] | length == 0'
+  - '[.[] | .height] | unique == [5]'
+---
+########################################################################################
+# Invalid ranges are rejected.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 5
+  end: 4
+status: 400
+---
+########################################################################################
+# Malformed start/end are rejected rather than silently treated as unspecified, so a
+# caller resuming a capped range by height gets an error instead of the wrong blocks.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: abc
+status: 400
+---
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 0
+status: 400
+---
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  level: loud
+status: 400
+---
+########################################################################################
+# A range past the tip is clamped to the blocks on disk, not an error.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/logs
+params:
+  start: 3
+  end: 99999
+  level: debug
+asserts:
+  - length > 0
+  - '[.[] | .height] | max == 5'
+  - '[.[] | .height] | min >= 3'

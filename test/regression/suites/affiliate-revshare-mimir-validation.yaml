@@ -1,0 +1,109 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# register thorname "t" owned by cat
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Case 1: REVSHARE-<nonexistent> rejected.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-nonexistent
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-nonexistent
+asserts:
+  - . == -1
+---
+########################################################################################
+# Case 2: value > RevShareMaxBps (5000) rejected.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 5001
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == -1
+---
+########################################################################################
+# Case 3: negative value rejected.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: -1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == -1
+---
+########################################################################################
+# Case 4: inclusive 5000-bps boundary accepted.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 5000
+---
+########################################################################################
+# Case 5: cleanly clearable back to 0 (proves the validator accepts 0 after
+# accepting 5000 — no test-environment bleed from rejected attempts).
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 0

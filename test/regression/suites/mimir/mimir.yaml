@@ -1,0 +1,98 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: RegressionTest
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .REGRESSIONTEST == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REGRESSIONTEST
+asserts:
+  - . == 1
+---
+type: tx-mimir
+key: FoxTest
+value: 1
+signer: {{ addr_thor_fox }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .FOXTEST|length == 0
+---
+########################################################################################
+# fail when Mimir length greater than MaxMimirLength
+########################################################################################
+type: tx-mimir
+key: RegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTestRegressionTest
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log | contains("invalid mimir key")
+---
+########################################################################################
+# fail min slip mimirs when over the SlipMinBpsMax (default 1%)
+########################################################################################
+type: tx-mimir
+key: L1SlipMinBps
+value: 101
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/L1SlipMinBps
+asserts:
+  - . == -1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log | contains("min slip mimir exceeds SlipMinBpsMax")
+---
+# up to the limit is ok
+type: tx-mimir
+key: L1SlipMinBps
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/L1SlipMinBps
+asserts:
+  - . == 100

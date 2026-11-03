@@ -1,0 +1,313 @@
+########################################################################################
+# Secured Asset Limit Swaps Tests
+#
+# This test suite validates limit swap functionality with secured assets (BTC-BTC, ETH-ETH).
+# Tests cover:
+# - Creating limit swaps between secured assets
+# - Modifying existing limit swaps (change target)
+# - Successful execution when price target is met
+# - Cancellation of limit swaps
+########################################################################################
+
+# Set minimum slip basis points for secured assets
+type: env
+key: SECURED_ASSET_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue for limit swaps
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify pools are created
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Setup: Deposit BTC as secured asset (creates BTC-BTC for fox)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "20000000"  # 0.2 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify BTC-BTC secured asset balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"
+---
+########################################################################################
+# Setup: Deposit ETH as secured asset (creates ETH-ETH for fox)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "200000000"  # 2 ETH (8 decimals in THORChain)
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify fox has both secured assets
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 3
+  - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"
+  - .balances[]|select(.denom == "eth-eth")|.amount == "200000000"
+---
+########################################################################################
+# Test 1: Create limit swap from BTC-BTC to ETH-ETH with high target (won't execute)
+########################################################################################
+# Get a quote to understand current rates
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: "BTC-BTC"
+  to_asset: "ETH-ETH"
+  destination: {{ addr_thor_fox }}
+  amount: 5000000
+asserts:
+  - .expected_amount_out == "49013580"
+---
+# Create limit swap with target higher than current output (won't execute)
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"  # 0.05 BTC-BTC
+    asset: "BTC-BTC"
+memo: "=<:ETH-ETH:{{ addr_thor_fox }}:60000000"  # Target 0.6 ETH, but quote is ~0.415 ETH
+---
+type: create-blocks
+count: 1
+---
+# Verify swap is in the advanced queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.trade_target == "60000000"
+  - .swap.tx.coins[0].asset == "BTC-BTC"
+  - .swap.target_asset == "ETH-ETH"
+  - .queue_type == "advanced"
+---
+# Secured asset limit swaps don't lock balance until execution (like trade assets)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"  # Balance unchanged until swap executes
+  - .balances[]|select(.denom == "eth-eth")|.amount == "200000000"  # ETH-ETH also unchanged
+---
+# Verify limit swap shows in API
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+asserts:
+  - .limit_swaps|length == 1
+  - .limit_swaps[0].swap.tx.coins[0].asset == "BTC-BTC"
+  - .limit_swaps[0].swap.target_asset == "ETH-ETH"
+  - .pagination.total == "1"
+---
+########################################################################################
+# Test 2: Modify the limit swap (lower target so it becomes achievable)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:5000000BTC-BTC:60000000ETH-ETH:50000000"  # Lower target from 0.6 to 0.5 ETH
+---
+type: create-blocks
+count: 1
+---
+# Verify modification took effect
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+asserts:
+  - .swap.trade_target == "50000000"  # Target should be updated
+  - .swap.tx.coins[0].asset == "BTC-BTC"
+  - .swap.target_asset == "ETH-ETH"
+  - .queue_type == "advanced"
+---
+# Verify limit_swap_mod event was emitted
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events|map(select(.type == "limit_swap_mod"))|length > 0
+---
+########################################################################################
+# Test 3: Modify the target again (further adjust)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:5000000BTC-BTC:50000000ETH-ETH:45000000"  # Lower target from 0.5 to 0.45 ETH
+---
+type: create-blocks
+count: 1
+---
+# Verify second modification took effect
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -3 }}
+asserts:
+  - .swap.trade_target == "45000000"  # Target should be updated again
+  - .queue_type == "advanced"
+---
+########################################################################################
+# Test 4: Trigger price movement to meet target (execute swap)
+# A large ETH->BTC swap will increase BTC value relative to ETH,
+# making our BTC-BTC->ETH-ETH limit swap more favorable
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "500000000"  # 5 ETH - large swap to move price
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "=:BTC.BTC:{{ addr_btc_cat }}"
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 15  # Give time for limit swap to execute
+---
+# Verify limit swap executed - fox should now have ETH-ETH from the swap
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "eth-eth")|.amount == "313568150"  # ETH-ETH balance after swap execution
+  - .balances[]|select(.denom == "eth-eth")|.amount|tonumber >= 45000000  # Must meet or exceed 45000000 target
+  - .balances[]|select(.denom == "btc-btc")|.amount == "15000000"  # BTC-BTC should have decreased from original 20000000
+---
+# Verify swap is removed from queue after execution
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+asserts:
+  - .limit_swaps|length == 0
+  - .pagination.total == "0"
+---
+########################################################################################
+# Test 5: Create a new limit swap for cancellation test
+########################################################################################
+# Record balances before creating the limit swap
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE=313568150}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "50000000"  # 0.5 ETH-ETH
+    asset: "ETH-ETH"
+memo: "=<:BTC-BTC:{{ addr_thor_fox }}:25000000"  # Target: 0.25 BTC-BTC (high, won't execute)
+---
+type: create-blocks
+count: 1
+---
+# Verify new swap is in queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.trade_target == "25000000"
+  - .swap.tx.coins[0].asset == "ETH-ETH"
+  - .swap.target_asset == "BTC-BTC"
+  - .queue_type == "advanced"
+---
+# Verify ETH-ETH balance after swap is queued (unchanged for secured asset limit swaps)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE}"  # Balance unchanged at queue time for secured assets
+---
+########################################################################################
+# Test 6: Cancel the limit swap (set target to 0)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:50000000ETH-ETH:25000000BTC-BTC:0"  # Cancel by setting target to 0
+---
+type: create-blocks
+count: 1
+---
+# Verify swap is removed from queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+asserts:
+  - .limit_swaps|length == 0
+  - .pagination.total == "0"
+---
+# Verify ETH-ETH was refunded (balance should be back to what it was before)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE}"
+---
+########################################################################################
+# Verify asgard invariants are not broken
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

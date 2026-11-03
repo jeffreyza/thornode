@@ -1,0 +1,86 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_thor_dog }}
+          coins:
+            - denom: rune
+              amount: "500000000000"
+        - address: {{ addr_thor_cat }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_thor_fox }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_module_reserve }}
+          coins:
+            - amount: "3500000000000"
+              denom: rune
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "150000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "150000000000" # reduced by factor of 10 from default
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap to rune
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# pool and bond reward calculations
+# when b < p 100% of rewards go to bonds
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block?height=1
+asserts:
+  - .end_block_events[] | select(.type == "rewards") | .bond_reward == "110984"
+  - .end_block_events[] | select(.type == "rewards") | keys | length == 8
+  - .end_block_events[] | select(.type == "rewards") | keys == ["bond_reward","dev_fund_reward","income_burn","marketing_fund_reward","mode","pol_reserve_reward","tcy_stake_reward","type"]

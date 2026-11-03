@@ -1,0 +1,449 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Try to add secured asset without any btc-btc available -> fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "btc-btc"
+memo: "+:BTC.BTC:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 5
+  - .txs[0].result.log | contains("insufficient funds")
+---
+###############################################################################
+# Deposit BTC
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "150000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "150000000"
+  - .depth == "150000000"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "150000000"
+---
+###############################################################################
+# Add to pool
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "btc-btc"
+memo: "+:BTC-BTC:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "+:BTC-BTC:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_rune|tonumber >= 200000000000
+  - .balance_asset == "200000000"
+  - .pending_inbound_asset == "0"
+  - .pending_inbound_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .rune_address == "{{ addr_thor_fox }}"
+  - .asset_address == "{{ addr_thor_fox }}"
+  - .last_add_height|tonumber > 1
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value|tonumber > 99990000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "50000000"
+  - .depth == "50000000"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount|tonumber == 50000000
+---
+###############################################################################
+# Try to deposit from L1, while having a position from secured assets
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "50000000000"
+    asset: "rune"
+memo: "+:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 123
+  - .txs[0].result.log | contains("paired address must be non-empty and together with origin")
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "+:BTC.BTC:{{ addr_thor_fox }}"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 0
+  - .txs[0].result.events|length > 2
+  - .txs[0].result.events[-2].to_address == "{{ addr_btc_fox }}"
+  - .txs[0].result.events[-1].reason|contains("must be non-empty and together with origin address match")
+  - .txs[0].result.events[-1].type == "refund"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .[0].coin.amount == "${OUT_AMOUNT=49993000}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - asset: "BTC.BTC"
+          amount: "${OUT_AMOUNT}"
+          decimals: 8
+      gas:
+        - asset: "BTC.BTC"
+          amount: "10500"
+      memo: "REFUND:{{ observe_txid 2 }}"
+    block_height: 8
+    finalise_height: 8
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .rune_address == "{{ addr_thor_fox }}"
+  - .asset_address == "{{ addr_thor_fox }}"
+  - .last_add_height|tonumber > 1
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value|tonumber >= 99990000
+  - .asset_deposit_value|tonumber < 100000000
+---
+###############################################################################
+# Withdraw half to secured assets
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000"
+    asset: "rune"
+memo: "-:BTC.BTC:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "99998859"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "99998859"
+  - .depth == "99998859"
+---
+###############################################################################
+# Withdraw half single sided as RUNE -> fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000"
+    asset: "rune"
+memo: "-:BTC.BTC:5000:THOR.RUNE"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("single sided withdrawal not supported")
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "99998859"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "99998859"
+  - .depth == "99998859"
+---
+###############################################################################
+# Withdraw half single sided as BTC -> fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000"
+    asset: "rune"
+memo: "-:BTC.BTC:5000:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("single sided withdrawal not supported")
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "99998859"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "99998859"
+  - .depth == "99998859"
+---
+###############################################################################
+# Withdraw remainder to secured assets
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000"
+    asset: "rune"
+memo: "-:BTC.BTC:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "149997718"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "149997718"
+  - .depth == "149997718"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 1
+---
+###############################################################################
+# Deposit from L1 now possible
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "25000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "+:BTC.BTC:{{ addr_thor_fox }}"
+    block_height: 13
+    finalise_height: 13
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "25000000000"
+    asset: "rune"
+memo: "+:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "124998782"
+  - .balance_rune == "125007658516"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .rune_deposit_value == "25000828776"
+  - .asset_deposit_value == "24999171"
+  - .rune_address == "{{ addr_thor_fox }}"
+  - .asset_address == "{{ addr_btc_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "149997718"
+  - .depth == "149997718"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "149997718"

@@ -1,0 +1,200 @@
+
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableSwitch-GAIA-NAMI
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - ."ENABLESWITCH-GAIA-NAMI" == 1
+---
+########################################################################################
+# Set up ATOM vaults
+########################################################################################
+type: tx-network-fee
+signer: {{ addr_thor_dog }}
+block_height: 1
+chain: GAIA
+transaction_size: 1000
+transaction_rate: 10 # 10 uatom
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: GAIA
+      from_address: {{ addr_gaia_fox }}
+      to_address: {{ addr_gaia_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "GAIA.ATOM"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "GAIA.ATOM"
+      memo: "+:GAIA.ATOM:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "+:GAIA.ATOM:{{ addr_gaia_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[]|.coins[]|select(.asset == "GAIA.ATOM")|.amount == "10000000"
+---
+########################################################################################
+# switch NAMI
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: GAIA
+      from_address: {{ addr_gaia_fox }}
+      to_address: {{ addr_gaia_dog }}
+      coins:
+        - amount: "10000000000000000"
+          asset: "GAIA.NAMI"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "GAIA.ATOM"
+      memo: "switch:{{ addr_thor_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "2499798000000"
+  - .balances[1].denom == "thor.nami"
+  - .balances[1].amount == "10000000000000000"
+---
+# Create NAMI/RUNE pool
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000000000"
+    asset: "THOR.NAMI"
+memo: "ADD:THOR.NAMI:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "250000000000"
+    asset: "rune"
+memo: "ADD:THOR.NAMI:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "2249794000000"
+  - .balances[1].denom == "thor.nami"
+  - .balances[1].amount == "9900000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/THOR.NAMI
+asserts:
+  - .status == "Available"
+  - .balance_asset == "100000000000000"
+  - .balance_rune == "250000000000"
+  - .pool_units == "250000000000"
+  - .LP_units == "250000000000"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "SWAP:THOR.NAMI:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "2239792000000"
+  - .balances[1].denom == "thor.nami"
+  - .balances[1].amount == "9903698224852071"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "THOR.NAMI"
+memo: "SWAP:THOR.NAMI:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "2239790000000"
+  - .balances[1].denom == "thor.nami"
+  - .balances[1].amount == "9903698224852071"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "WITHDRAW:THOR.NAMI:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "2359588307220"
+  - .balances[1].denom == "thor.nami"
+  - .balances[1].amount == "9951849112426036"

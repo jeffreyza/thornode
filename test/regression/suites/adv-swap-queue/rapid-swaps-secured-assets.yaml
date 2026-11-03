@@ -1,0 +1,81 @@
+########################################################################################
+# Rapid Swap Secured Asset Coverage (Deterministic)
+########################################################################################
+
+type: env
+key: SECURED_ASSET_SLIP_MIN_BPS
+value: "5"
+---
+type: env
+key: SECUREDASSETSLIPMINBPS
+value: "5"
+---
+type: env
+key: L1SLIPMINBPS
+value: "5"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-gusd-mainnet-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# secure USDC to fox
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10200000009"
+          asset: "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+          decimals: 6
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# secured asset -> native
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10200000009"
+    asset: "ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# verify native RUNE increased
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber > 2500000000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

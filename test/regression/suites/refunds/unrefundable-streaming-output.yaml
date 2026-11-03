@@ -1,0 +1,134 @@
+type: env
+key: L1_SLIP_MIN_BPS # Necessary to enable L1 streaming swaps.
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${ASSET_DEPTH=100000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|[.[].coins[]|select(.asset == "BTC.BTC").amount|tonumber] | add == ${ASSET_DEPTH}
+  # No oversolvency at the start.
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result | length == 1
+  - .result[] | select(.denom == "rune").amount == "${CAT_RUNE=2500000000000}"
+  - ${CAT_RUNE} / 5 == ${CAT_FIFTH_RUNE=500000000000}
+---
+########################################################################################
+# Begin two-sub-swap streaming swap to BTC.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "${CAT_FIFTH_RUNE}"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_cat }}:0/${INTERVAL=1}/${QUANTITY=3}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+asserts:
+  - .swap.state.interval == ${INTERVAL}
+  - .swap.state.quantity == ${QUANTITY}
+  - .swap.state.count < ${QUANTITY} # Streaming swap in progress.
+  - .swap.target_asset == "BTC.BTC"
+  - .swap.state.out | tonumber > 0
+  # Non-zero BTC completed swap output, already unrefunable to the THOR cat address.
+---
+########################################################################################
+# 'Fee spike':
+# Set BTC network fee (and thus outbound fee) too high for any successful outbound.
+########################################################################################
+type: tx-network-fee
+signer: {{ addr_thor_dog }}
+block_height: 1
+chain: BTC
+transaction_size: 1000
+transaction_rate: ${ASSET_DEPTH}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/BTC.BTC
+asserts:
+  - length == 1
+  - .[0].outbound_fee > ${ASSET_DEPTH}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+asserts:
+  - .swap.state.count == ${QUANTITY} - 1 # Streaming swap about to complete.
+  - .swap.target_asset == "BTC.BTC"
+  - .swap.state.out | tonumber > 0
+  # Non-zero BTC completed swap output, unrefunable to the THOR cat address.
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Checking of event emission upon the completed streaming swap.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/THOR.RUNE
+asserts:
+  - length == 1
+  - .[0].outbound_fee == "0"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result | length == 1
+  - .result[0].denom == "rune"
+  - .result[0].amount | tonumber == ${CAT_RUNE} - ${CAT_FIFTH_RUNE} - ${RUNE_NETWORK_FEE=2000000}
+  # Cat balance has decreased as intended (no RUNE or other refund).
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|[.[].coins[]|select(.asset == "BTC.BTC").amount|tonumber] | add == ${ASSET_DEPTH}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset | tonumber == ${ASSET_DEPTH}
+  # No outbound was queued, so the failed unrefundable output no longer reduces pool depth.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+  # No outbound in the queue.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "swap")] | length == 1
+#  - .|[..|select(.type? == "swap")][0] | .streaming_swap_count == .streaming_swap_quantity
+  - .|[..|select(.type? == "streaming_swap")] | length == 1
+  - .|[..|select(.type? == "streaming_swap")][0] | .count == .quantity
+  - .|[..|select(.type? == "scheduled_outbound")] | length == 0
+  - .|[..|select(.type? == "outbound")] | length == 0
+  - .|[..|select(.type? == "refund")] | length == 1
+  - ..|select(.type? == "refund").coin | contains("BTC.BTC")
+  - ..|select(.type? == "refund").reason | contains("fail to refund")
+  - ..|select(.type? == "refund").reason | contains("swap output")
+  # The "fail to refund" refund event reports to explorers/interfaces what has happened to the output.
+---
+# Since vault has more than the pool:
+type: fail-export-invariants

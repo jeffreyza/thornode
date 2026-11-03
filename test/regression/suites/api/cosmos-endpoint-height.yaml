@@ -1,0 +1,60 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - length == 1
+---
+########################################################################################
+# Check Cosmos-SDK endpoint 'height' parameter.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - length >= 1
+  - .[0].thorchain == ${HEIGHT_1=1}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune
+asserts:
+  - length == 1
+  - .balance.denom == "rune"
+  - .balance.amount == "${HEIGHT_1_RESERVE=34999998890157}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - length >= 1
+  - .[0].thorchain == ${HEIGHT_2=2}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune
+asserts:
+  - length == 1
+  - .balance.denom == "rune"
+  - .balance.amount == "${HEIGHT_2_RESERVE=34999997780314}"
+  - ${HEIGHT_2_RESERVE} < ${HEIGHT_1_RESERVE} # Due to block rewards.
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune&height=${HEIGHT_2}
+asserts:
+  - length == 1
+  - .balance.denom == "rune"
+  - .balance.amount == "${HEIGHT_2_RESERVE}"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune&height=${HEIGHT_1}
+asserts:
+  - length == 1
+  - .balance.denom == "rune"
+  - .balance.amount != "${HEIGHT_2_RESERVE}"
+  - .balance.amount == "${HEIGHT_1_RESERVE}"
+  # The endpoint data matches the specified height parameter.

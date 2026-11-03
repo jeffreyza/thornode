@@ -1,0 +1,267 @@
+########################################################################################
+## Test limit order quotes with advanced swap queue enabled
+## This test focuses on the integration between limit order quotes and the advanced swap queue
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test that limit endpoint is disabled when advanced swap queue is off
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000
+status: 400
+asserts:
+  - .message|contains("limit orders require advanced swap queue to be enabled")
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Basic limit order quote with target_out
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=<:")
+  - .memo|contains("2000000000")  # Target output amount in memo
+  - .memo|contains("/43200/0")  # Default streaming parameters
+  - .order_expiry_block|tonumber > 0
+  - .order_expiry_timestamp|tonumber > 0
+  - .inbound_address == "{{ addr_btc_dog }}"
+  - .notes|length > 0
+  - .dust_threshold|length > 0
+---
+########################################################################################
+# Limit order with custom TTL (TTL becomes streaming interval in memo)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+  custom_ttl: 1000
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=<:")
+  - .memo|contains("2000000000")  # Target output amount in memo
+  - .memo|contains("/1000/0")  # TTL becomes streaming interval in memo
+  - .order_expiry_block|tonumber > 0
+  - .order_expiry_timestamp|tonumber > 0
+  - .inbound_address == "{{ addr_btc_dog }}"
+  - .notes|length > 0
+---
+########################################################################################
+# Limit order with streaming parameters (should still fit in 80 bytes)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+  custom_ttl: 2
+  streaming_quantity: 3
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=<:")
+  - .memo|contains("2000000000")  # Target output amount in memo
+  - .memo|contains("/2/1")  # Explicit streaming parameters, max quantity is capped to 1
+  - .order_expiry_block|tonumber > 0
+  - .order_expiry_timestamp|tonumber > 0
+  - .inbound_address == "{{ addr_btc_dog }}"
+---
+########################################################################################
+# Limit order with target_out (explicit limit price)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=<:")
+  - .memo|contains("2000000000")  # Target output amount in memo
+  - .memo|contains("/43200/0")  # Default streaming parameters
+  - .order_expiry_block|tonumber > 0
+  - .order_expiry_timestamp|tonumber > 0
+---
+########################################################################################
+# Limit order with target_out and custom TTL
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 1500000000  # 1.5 ETH in base units
+  custom_ttl: 500
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=<:")
+  - .memo|contains("1500000000")  # Target output amount in memo
+  - .memo|contains("/500/0")  # TTL becomes streaming interval in memo
+  - .order_expiry_block|tonumber > 0
+  - .order_expiry_timestamp|tonumber > 0
+---
+########################################################################################
+# Limit order with memo length edge case (affiliate + refund + streaming)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+  affiliate: {{ addr_thor_fox }}
+  affiliate_bps: 50
+  refund_address: {{ addr_btc_fox }}
+  custom_ttl: 2
+  streaming_quantity: 3
+status: 400
+asserts:
+  - .message|contains("generated memo too long for source chain")
+---
+########################################################################################
+# Test error cases - invalid custom TTL
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+  custom_ttl: invalid
+status: 400
+asserts:
+  - .message|contains("bad custom_ttl")
+---
+########################################################################################
+# Test error cases - negative custom TTL
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 2000000000  # 2 ETH in base units
+  custom_ttl: -100
+status: 400
+asserts:
+  - .message|contains("custom_ttl must be positive")
+---
+########################################################################################
+# Test error cases - invalid target_out
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: invalid
+status: 400
+asserts:
+  - .message|contains("bad target_out")
+---
+########################################################################################
+# Test error cases - zero target_out
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  target_out: 0
+status: 400
+asserts:
+  - .message|contains("target_out must be positive")
+---
+########################################################################################
+# Test error cases - limit order without target_out
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/limit
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+  # No target_out provided
+status: 400
+asserts:
+  - .message|contains("missing target_out parameter")
+---
+########################################################################################
+# Test market order (default) for comparison
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: 100000000
+  destination: {{ addr_eth_fox }}
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .memo|startswith("=:")
+  - has("order_expiry_block")|not
+  - has("order_expiry_timestamp")|not
+  - has("current_ratio")|not
+  - has("trigger_ratio")|not
+  - .inbound_address == "{{ addr_btc_dog }}"

@@ -1,0 +1,606 @@
+type: env
+key: SYNTH_SLIP_MIN_BPS
+value: 50
+---
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 0
+---
+type: tx-mimir
+key: "RagnarokProcessNumOfLPPerIteration"
+value: 2
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: "FundMigrationInterval"
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-network-fee
+signer: {{ addr_thor_dog }}
+block_height: 1
+chain: ETH
+transaction_size: 1000
+transaction_rate: 100 # 100 gwei
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# create eth pool with 2 liquidity providers
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH.ETH:{{ addr_thor_cat }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH.ETH:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "+:ETH.ETH:{{ addr_eth_cat }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "+:ETH.ETH:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.status == "done"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+  - .[0].LP_units == "400000000"
+  - .[0].pending_inbound_asset == "0"
+  - .[0].pending_inbound_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+asserts:
+  - .|length == 2
+  - .[0].units == "200000000"
+  - .[1].units == "200000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# create token pool
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.FOO"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH.FOO:{{ addr_thor_cat }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "+:ETH.FOO:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.FOO/liquidity_providers
+asserts:
+  - .|length == 1
+  - .[0].units == "100000000"
+---
+########################################################################################
+# add 3 savers
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH/ETH"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH/ETH"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: ETH
+      from_address: {{ addr_eth_pig }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "+:ETH/ETH"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+asserts:
+  - .|length == 3
+---
+########################################################################################
+# enable streaming withdraw to verify later on that withdraws remain non-streaming
+########################################################################################
+type: tx-mimir
+key: "SaversStreamingSwapsInterval"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+########################################################################################
+# stream to one synth holder
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:ETH/ETH:{{ addr_thor_fox }}:0/1/2"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - .|length == 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom=="eth/eth")|.amount|tonumber == 47122024
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499696000000
+---
+########################################################################################
+# ragnarok the pool
+########################################################################################
+type: tx-mimir
+key: "RAGNAROK-ETH-ETH"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# before gas asset ragnarok should eject the token pool LP
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=100000000}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499696000000+100405724
+---
+# observe token pool outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 7 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "ETH.FOO"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "RAGNAROK:8"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# first block should eject two savers
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+asserts:
+  - .|length == 1
+---
+# savers eject to the swap queue for synth -> L1 before outbound
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap to L1 and streaming synth exit should not be allowed on ragnarok pool
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BALANCE=2499796405724}
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "=:ETH.ETH:{{ addr_eth_cat }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "47127015"
+    asset: "eth/eth"
+memo: "=:ETH.ETH:{{ addr_eth_fox }}:0/1/0"
+---
+type: create-blocks
+count: 1
+---
+# cat account lost gas
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BALANCE}-2000000
+---
+# cat account error
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("trading is halted")
+---
+########################################################################################
+# second block should eject last saver and create outbounds for the first 2
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+---
+# lps should be untouched
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+asserts:
+  - .|length == 2
+  - .[0].units == "200000000"
+  - .[1].units == "200000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .status == "Available"
+---
+# set to 1 to see the pool status change Available -> Staged -> Suspended
+type: tx-mimir
+key: "RagnarokProcessNumOfLPPerIteration"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+########################################################################################
+# non streaming synth exit is allowed
+########################################################################################
+# non streaming exit should have processed
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .|[.balances[]|select(.denom=="eth/eth")] | length == 1
+  - .balances[]|select(.denom=="eth/eth").amount == "${FOX_SYNTH=47122024}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${FOX_SYNTH}"
+    asset: "eth/eth"
+memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+---
+########################################################################################
+# third block should create last saver outbound, stage the pool, and eject first lp
+########################################################################################
+type: create-blocks
+count: 1
+---
+# non streaming exit should have processed
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+# outbounds for all savers withdrawals, synth swap, and the first LP withdrawal
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+asserts:
+  - .|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .status == "Staged"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 5
+  - .[0].coin.amount == "${OUTPUT_AMOUNT_1=8908578}"
+  - .[0].in_hash == "${IN_HASH_1=59F3B49705FEE999EE4B944FB3ABD8458FE284A98BAF17A9A5136E64DB5BA81A}"
+  - .[1].coin.amount == "${OUTPUT_AMOUNT_2=8846952}"
+  - .[1].in_hash == "${IN_HASH_2=03BA38020AF6B8AB2CB571104F6B6B04F3947588A707C26B5A63E1253A6A88EA}"
+  - .[2].coin.amount == "${OUTPUT_AMOUNT_3=31793619}"
+  - .[2].in_hash == "${IN_HASH_3=763237E360553D59A8E428A5F34D1273AE53905098B37620B7FF1BD65323C3EB}"
+  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=8719255}"
+  - .[3].in_hash == "${IN_HASH_4=E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC}"
+---
+# observe outbounds for saver withdrawals and the synth swap
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 8 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_pig }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_1}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "OUT:${IN_HASH_1}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 9 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_2}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "OUT:${IN_HASH_2}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_4}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "OUT:${IN_HASH_4}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 11 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_3}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "OUT:${IN_HASH_3}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# fourth block should eject last lp, but it will fail with insufficient funds
+########################################################################################
+type: create-blocks
+count: 1
+skip_invariants: true # last withdraw failed, but LP was removed
+---
+# just the one lp outbound remains
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].coin.amount == "${OUTPUT_AMOUNT=85843298}"
+---
+# observe lp outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 12 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "RAGNAROK:11"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# fifth block should mark the pool suspended
+########################################################################################
+type: create-blocks
+count: 1
+skip_invariants: true # last withdraw failed, but LP was removed
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .status == "Suspended"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

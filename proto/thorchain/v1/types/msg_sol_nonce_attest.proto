@@ -1,0 +1,34 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+import "amino/amino.proto";
+
+// MsgSolNonceAttest re-attests a Solana vault's durable-nonce account when its
+// on-chain nonce has moved past the value committed on THORChain without a
+// committed observation (the only txs that advanced it FAILED on-chain, so they
+// were never observed). A final 2/3 supermajority of identical attestations
+// re-anchors the vault's committed nonce.
+message MsgSolNonceAttest {
+  option (amino.name) = "thorchain/MsgSolNonceAttest";
+
+  string vault_pub_key = 1
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  // the vault's seed-derived durable-nonce account
+  string nonce_account = 2;
+  // the nonce value the account holds on-chain
+  string nonce = 3;
+  // Solana slot of last_tx
+  int64 slot = 4;
+  // the newest (failed) transaction that advanced the nonce account; becomes
+  // the committed record's set_by_tx
+  string last_tx = 5
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
+  bytes signer = 6 [
+    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress",
+    (amino.encoding) = "bech32"
+  ];
+}

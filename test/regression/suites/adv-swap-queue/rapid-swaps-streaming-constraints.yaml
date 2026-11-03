@@ -1,0 +1,153 @@
+########################################################################################
+# Rapid Swap Streaming Constraints
+# Covers StreamingSwapPause gating and interval scheduling under rapid iterations.
+########################################################################################
+
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: tx-mimir
+key: AdvSwapQueueRapidSwapMax
+value: 5
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test 1: StreamingSwapPause blocks rapid streaming market swaps
+########################################################################################
+type: tx-mimir
+key: StreamingSwapPause
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - (.swap.state.count // 0) == 0
+  - .swap.state.in == "0"
+  - .swap.state.out == "0"
+  - .swap.state.failed_swaps|length == 0
+  - .swap.state.failed_swap_reasons|length == 0
+  - .queue_type == "advanced"
+---
+type: tx-mimir
+key: StreamingSwapPause
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.count >= 1
+  - .swap.state.in != "0"
+  - .queue_type == "advanced"
+---
+type: create-blocks
+count: 12
+---
+########################################################################################
+# Test 2: Interval > 1 remains enforced even when rapid iterations are enabled
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_2={{ observe_txid 2 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_cat }}:0/2/5"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.state.count >= 1
+  - .swap.state.interval == 2
+  - .swap.state.quantity == 5
+  - .queue_type == "advanced"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.state.count < .swap.state.quantity
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+asserts:
+  - .swap.state.count < .swap.state.quantity
+---
+type: create-blocks
+count: 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|map(select(.tx.id == "${TXID_2}"))|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

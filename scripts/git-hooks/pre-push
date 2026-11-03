@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Run CI's lint job (make lint-ci) before a push leaves the machine, and with
+# PRE_PUSH_GENERATE=1 also CI's generate job (make generate, then no changes).
+# About half of the failures CI really catches are lint, format or generated
+# file failures, and each one costs a push and a pipeline wait. generate needs
+# Docker and takes minutes, so it is opt-in.
+#
+# Install with `make install-git-hooks`. Skip it once with
+# SKIP_PRE_PUSH=1 git push, or git push --no-verify.
+#
+# The checks read the working tree, so they only test a ref whose tip is the
+# checked-out commit. A push of any other ref goes through unchecked.
+
+set -euo pipefail
+
+if [ -n "${SKIP_PRE_PUSH-}" ]; then
+  echo "pre-push: SKIP_PRE_PUSH is set; not running the lint and generate checks"
+  exit 0
+fi
+
+head=$(git rev-parse HEAD)
+check=false
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one per pushed ref
+while read -r local_ref local_sha _ _; do
+  case "$local_sha" in
+  *[!0]*) ;;
+  *) continue ;; # deletes the remote ref
+  esac
+  if [ "$local_sha" = "$head" ]; then
+    check=true
+  else
+    echo "pre-push: $local_ref is not checked out; pushing it unchecked"
+  fi
+done
+if [ "$check" != true ]; then
+  exit 0
+fi
+
+fail() {
+  echo
+  echo "pre-push: $1. Commit the fixes, or push anyway with"
+  echo "SKIP_PRE_PUSH=1 git push (or git push --no-verify)."
+  exit 1
+}
+
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "pre-push: warning: the checks see your uncommitted changes; CI will not"
+fi
+
+echo "pre-push: make lint-ci (SKIP_PRE_PUSH=1 to skip)"
+make --no-print-directory lint-ci </dev/null || fail "make lint-ci failed"
+
+if [ -n "${PRE_PUSH_GENERATE-}" ]; then
+  # CI fails when make generate changes anything (scripts/lint-generated.bash).
+  # Compare against the tree as it was, so local untracked files do not count.
+  tree_state() {
+    git diff HEAD --binary | git hash-object --stdin
+    git ls-files --others --exclude-standard
+  }
+  before=$(tree_state)
+  echo "pre-push: make generate"
+  make --no-print-directory generate </dev/null || fail "make generate failed"
+  if [ "$(tree_state)" != "$before" ]; then
+    git status --short
+    fail "make generate changed the files above"
+  fi
+fi

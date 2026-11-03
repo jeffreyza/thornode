@@ -1,0 +1,20 @@
+# Reachable govulncheck findings accepted by scripts/govulncheck.sh.
+# Format: <OSV ID>  # <reason>. The script warns when an entry is no longer
+# reported; delete it then.
+
+# Consensus deps: fixing these changes state-machine code and needs a separate
+# hard-fork-aware MR.
+GO-2025-3803  # cosmos-sdk v0.53.0, fixed in v0.53.3; consensus dep, needs a separate hard-fork-aware MR
+GO-2022-1098  # btcd v0.22.1 (go.mod replace), fixed in v0.23.2; also imported by common/ and x/thorchain, and 0.23+ drops the btcec v1 package used in ~30 files; needs its own MR
+GO-2025-3684  # cosmos/evm v1.0.0-rc2 precompile partial state writes; no fix for this module path; we only use its codec/ethsecp256k1 types, not the EVM precompiles
+
+# No fix available upstream.
+GO-2023-1821  # cosmos-sdk x/crisis does not halt the chain; no fix; crisis is not registered in app (linked only via wasmd keeper, reported through AppModuleBasic interface dispatch)
+GO-2023-1881  # cosmos-sdk x/crisis does not charge ConstantFee; no fix; crisis is not registered in app (linked only via wasmd keeper)
+GO-2026-4513  # shamaton/msgpack/v2; no fix; used only by wasmvm pinned-metrics decoding of data from our own libwasmvm
+GO-2026-5932  # x/crypto/openpgp unmaintained; no fix; imported by cosmos-sdk/crypto (armor) and grpc-web, not by thornode directly
+
+# Old libp2p fork used by bifrost p2p / go-tss; migrating off it is out of scope.
+GO-2022-1148  # go-libp2p v0.11.0, fixed in v0.18.0; bifrost p2p libp2p fork, migration out of scope
+GO-2023-2024  # go-libp2p v0.11.0, fixed in v0.27.4; bifrost p2p libp2p fork, migration out of scope
+GO-2024-3218  # go-libp2p-kad-dht v0.10.0; no fix; bifrost p2p libp2p fork, migration out of scope

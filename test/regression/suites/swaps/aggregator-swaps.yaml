@@ -1,0 +1,95 @@
+# NOTE: This regression test covers outbound aggregator behavior only (THORNode queuing
+# a swap-out through an aggregator). Inbound aggregator swap-in observation (bifrost
+# parsing EVM receipts where tx.To() is an aggregator contract) cannot be tested here
+# because regression tests operate at the THORNode protocol level, not the bifrost
+# scanning level. Inbound aggregator path coverage is provided by unit tests in:
+#   - bifrost/pkg/chainclients/ethereum/ethereum_block_scanner_test.go (TestFromTxToTxIn, TestRouterValidation)
+#   - bifrost/pkg/chainclients/evm/evm_block_scanner_test.go (TestRouterValidation)
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap to swap out aggregator contract
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:e:{{ addr_eth_fox }}::::6f3848:19e4348"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# check explicit match on queue/keysign as types have bit us multiple times
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - | # Note incidentally that this == does not check the field order.
+    .[0] == {
+      "height": 2,
+      "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+      "in_hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+      "chain": "ETH",
+      "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+      "coin": {
+        "asset": "ETH.ETH",
+        "amount": "82004267"
+      },
+      "max_gas": [
+        {
+          "asset": "ETH.ETH",
+          "amount": "960000",
+          "decimals": 8
+        }
+      ],
+      "gas_rate": 120,
+      "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+      "original_memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+      "aggregator": "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
+      "aggregator_target_asset": "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
+      "aggregator_target_limit": "0",
+      "clout_spent": "0"
+    }
+
+---
+type: check
+endpoint: http://localhost:1317/thorchain/keysign/2/tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+asserts:
+  - |
+    .keysign.tx_array[0] == {
+        "chain": "ETH",
+        "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+        "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+        "coin": {
+          "asset": "ETH.ETH",
+          "amount": "82004267"
+        },
+        "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+        "original_memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+        "max_gas": [
+          {
+            "asset": "ETH.ETH",
+            "amount": "960000",
+            "decimals": 8
+          }
+        ],
+        "gas_rate": 120,
+        "in_hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+        "aggregator": "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
+        "aggregator_target_asset": "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
+        "aggregator_target_limit": "0",
+        "clout_spent": "0"
+      }
+  - .signature == "N1nQajpYIF04JuAx3VhrVQDtwTdqMgl/FHBfTn8MVJBl/20oM5in2KaxQLMLoCAWg0xjKykx57cuS34zabP6DA=="

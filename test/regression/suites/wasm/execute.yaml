@@ -1,0 +1,103 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "counter.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
+  - .txs[0].result.events[4]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].new_value == "1"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5].new_value == "2"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "decrement": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5].new_value == "1"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "decrement": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5].new_value == "0"
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "decrement": {}}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '.txs[0].result.log == "failed to execute message; message index: 0: Cannot Sub with given operands: execute wasm contract failed"'

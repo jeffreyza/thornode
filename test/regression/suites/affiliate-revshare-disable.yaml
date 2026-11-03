@@ -1,0 +1,124 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# register thorname "t" owned by cat
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable REVSHARE-t at 2500 bps and confirm.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 2500
+---
+########################################################################################
+# Disable REVSHARE-t by setting it to 0. Operational mimir validation already
+# allows 0 as a valid value (handler_mimir.go REVSHARE branch).
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 0
+---
+########################################################################################
+# Make a swap that names "t" as first affiliate AFTER REVSHARE-t was disabled.
+# Attribution still fires (thorname is registered and CanReceiveAffiliateFee),
+# so the per-block accumulator records the gross fee. End-of-block drain
+# emits a rev_share event with bps="0" and payout="0" — gross attribution
+# is preserved for indexers, no funds move from the Reserve.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::t:100"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").bps == "0"
+  - ..|select(.type?=="rev_share").payout == "0"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+---
+########################################################################################
+# Re-enable REVSHARE-t and confirm payouts resume on the next swap.
+# Locks in that the disable path is genuinely reversible — the previous
+# 0 vote did not poison the operational mimir state.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 5000
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::t:100"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").bps == "5000"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0

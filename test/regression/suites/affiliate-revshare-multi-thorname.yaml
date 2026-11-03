@@ -1,0 +1,158 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Snapshot AffiliateCollector module balance — should be 0 at fresh state.
+# Captures the pre-swap baseline so a future regression that leaks RUNE into
+# this module across other code paths is caught.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - ((.coins // []) | map(select(.denom=="rune").amount | tonumber) | add // 0) == 0
+---
+########################################################################################
+# pig is not pre-funded by default-state.yaml; seed pig from fox so pig can
+# pay TNS_REGISTER_FEE + initial-deposit on thorname registration.
+# Same pattern as test/regression/suites/swaps/affiliates-preferred-asset.yaml.
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "15000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# register thornames "a" (owned by cat) and "b" (owned by pig)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:a:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:b:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable REVSHARE-a=2500, REVSHARE-b=5000
+########################################################################################
+type: tx-mimir
+key: REVSHARE-a
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: REVSHARE-b
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Two swaps in the same block, submitted in REVERSE-LEX order so swap order
+# does NOT match the expected event order. The lex-sorted accumulator slice
+# from GetAffiliateLiquidityFees should still emit A first, then B.
+#
+# First swap: thorname "b". Second swap: thorname "a". Both batched into
+# one create-blocks at the end so they land in the same block.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::b:100"
+sequence: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::a:100"
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Two rev_share events in lex-by-uppercase-thorname order: A first, B second.
+# Use [..|select(...)] to materialize the slice and index positionally so
+# the ordering assertion tests actual emission order, not just set membership.
+#
+# length == 2: per-thorname accumulator folds same-block multiple
+# attributions (main swap + inner affiliate-fee conversion sub-swap)
+# into exactly one rev_share event per thorname.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 2
+  # Lex-ordered: first rev_share event is "A".
+  - (.|[..|select(.type?=="rev_share")])[0].thorname == "A"
+  - (.|[..|select(.type?=="rev_share")])[0].owner == "{{ addr_thor_cat }}"
+  - (.|[..|select(.type?=="rev_share")])[0].bps == "2500"
+  - ((.|[..|select(.type?=="rev_share")])[0].payout | tonumber) > 0
+  # Lex-ordered: second rev_share event is "B".
+  - (.|[..|select(.type?=="rev_share")])[1].thorname == "B"
+  - (.|[..|select(.type?=="rev_share")])[1].owner == "{{ addr_thor_pig }}"
+  - (.|[..|select(.type?=="rev_share")])[1].bps == "5000"
+  - ((.|[..|select(.type?=="rev_share")])[1].payout | tonumber) > 0
+  # Round-half-up share math holds for the dominant (main-swap) event of each thorname.
+  - (((.|[..|select(.type?=="rev_share")])[0].accrued_fee | tonumber) * 2500 / 10000 | . + 0.5 | floor) == ((.|[..|select(.type?=="rev_share")])[0].payout | tonumber)
+  - (((.|[..|select(.type?=="rev_share")])[1].accrued_fee | tonumber) * 5000 / 10000 | . + 0.5 | floor) == ((.|[..|select(.type?=="rev_share")])[1].payout | tonumber)
+---
+########################################################################################
+# AffiliateCollector module balance grew. The sum of all rev_share payouts
+# in this block equals the RUNE delta in the affiliate_collector module
+# balance (no other code path moves RUNE into this module in this block).
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - ((.coins | map(select(.denom=="rune").amount | tonumber) | add // 0)) > 0
+---
+########################################################################################
+# Per-owner AffiliateCollector entries — both owners credited.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/a
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - (.affiliate_collector_rune | tonumber) > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/b
+asserts:
+  - .owner == "{{ addr_thor_pig }}"
+  - (.affiliate_collector_rune | tonumber) > 0

@@ -1,0 +1,132 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Seed addr_thor_pig with rune. The default genesis only funds dog/cat/fox,
+# so pig has no account yet and cannot sign the thorname registration below.
+# Same pattern as swaps/affiliates-preferred-asset.yaml.
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "15000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# register thorname "a" owned by cat
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:a:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# register thorname "b" owned by pig
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:b:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable REVSHARE-a (2500 bps) and REVSHARE-b (5000 bps). Distinct values so
+# the rev_share event clearly identifies which thorname produced each event.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-a
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: REVSHARE-b
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Phase 1: memo "[a, b]" — first affiliate is "a".
+# Per spec, only the first affiliate is REVSHARE-eligible. Expected:
+# exactly one rev_share event with thorname="A" and bps="2500". No event
+# for B; protocol-internal conversion swaps (affiliateSwapToRune) are
+# excluded from attribution at swap_current.go via destination checks.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::a/b:50/50"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "A"
+  - ..|select(.type?=="rev_share").owner == "{{ addr_thor_cat }}"
+  - ..|select(.type?=="rev_share").bps == "2500"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+  - ((..|select(.type?=="rev_share").accrued_fee | tonumber) * 2500 / 10000 | . + 0.5 | floor) == (..|select(.type?=="rev_share").payout | tonumber)
+---
+########################################################################################
+# Phase 2: memo "[b, a]" — first affiliate is "b".
+# Per spec, only the first affiliate is REVSHARE-eligible. Expected:
+# exactly one rev_share event with thorname="B" and bps="5000". No event
+# for A; protocol-internal conversion swaps (affiliateSwapToRune) are
+# excluded from attribution at swap_current.go via destination checks.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::b/a:50/50"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "B"
+  - ..|select(.type?=="rev_share").owner == "{{ addr_thor_pig }}"
+  - ..|select(.type?=="rev_share").bps == "5000"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+  - ((..|select(.type?=="rev_share").accrued_fee | tonumber) * 5000 / 10000 | . + 0.5 | floor) == (..|select(.type?=="rev_share").payout | tonumber)

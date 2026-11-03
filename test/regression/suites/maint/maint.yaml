@@ -1,0 +1,113 @@
+{{ template "default-state.yaml" }}
+---
+# This test verifies the maintenance feature which allows node operators to toggle 
+# the maintenance flag on their node account.
+#
+# Step 1: Create blocks to initialize the chain
+type: create-blocks
+count: 1
+---
+# Step 2: Check initial node account state - should have maintenance flag as false (default)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .maintenance == false
+---
+# Step 3: Set up a second node to test access control
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "10000000000" # 10,000 RUNE
+memo: "BOND:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .total_bond == "10000000000"
+---
+# Step 4: Send a maintenance toggle memo transaction from the bond address holder (should succeed)
+# Note: In the test environment, the bond address is typically the same as the node address
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+# Step 5: Check that maintenance flag is now set to true
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .maintenance == true
+---
+# Step 6: Try to toggle another node's maintenance flag (should fail because only the bond address owner can toggle)
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+# Step 7: Check that the maintenance flag is still true (unauthorized attempt should have no effect)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .maintenance == true
+---
+# Step 8: Second node operator tries to toggle their own maintenance flag (should succeed)
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# Step 9: Check that second node's maintenance flag is now true
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .maintenance == true
+---
+# Step 10: Toggle both nodes back to maintenance=false
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .maintenance == false
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: "rune"
+    amount: "0"
+memo: "maint:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .maintenance == false

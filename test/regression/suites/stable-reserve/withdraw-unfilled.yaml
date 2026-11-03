@@ -1,0 +1,172 @@
+########################################################################################
+# Stable Reserve - Unfilled Withdrawals
+#
+# Asserts the behavior when a contributor tries to withdraw an asset that the
+# module no longer holds (e.g., because it was rescued away during a depeg).
+# The withdrawal should be rejected with a refund carrying the unfilled Stable
+# Reserve reason, and the contributor's credit should remain unchanged.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable features and deposit 1000 USDC
+########################################################################################
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+# A second healthy TOR anchor (USDT) is required so the module can derive
+# dollars-per-rune and price the USDC pool: eligibility is gated on that pool
+# price, and the depeg is detected relative to this healthy reference.
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: StableReserveEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+# Rescue swaps are slip-sized (quantity 0, interval 1) by the swap manager. Bound
+# the native streaming length to 10 so the rescue resolves in a deterministic,
+# short number of sub-swaps before the oracle price feed goes stale.
+type: tx-mimir
+key: StreamingSwapMaxLength
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: StreamingSwapMaxLengthNative
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 5
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "1000000000"
+---
+########################################################################################
+# TRIGGER RESCUE: drop USDC price to 0.50
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# step through rescue settlement, re-feeding the depeg price so the slip-sized
+# rescue stream keeps running and fully drains USDC inventory to the reserve.
+########################################################################################
+type: create-blocks
+count: 12
+---
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 12
+---
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 12
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  # USDC inventory rescued away
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'
+---
+########################################################################################
+# attempt to withdraw 500 USDC. It should remain unfilled because inventory is 0.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 6
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable-:500000000"
+    block_height: 15
+    finalise_height: 15
+    observed_pub_key: {{ pubkey_dog }}
+    # sequence 6 (dog): follows the deposit inbound at sequence 5
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert unfilled: refund emitted, credit remains 1000
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type == "refund")|select(.reason|contains("stable reserve withdrawal unfilled"))]|length == 1'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  # unfilled withdrawal leaves the contributor credit unchanged
+  - .credit == "1000000000"

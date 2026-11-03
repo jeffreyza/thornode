@@ -1,0 +1,143 @@
+
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "mint.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: { "id": "ruji", "amount": "10000000000000000", "metadata": { "description": "description", "display": "RUJI", "name": "Rujira", "symbol": "RUJI", "uri": "https://rujira.network" }}
+label: "ruji"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "5000000000000"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "10000000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
+  - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].code_id == "1"
+---
+# Create RUJI/RUNE pool
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "100000000000000"
+    asset: "THOR.RUJI"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "250000000000"
+    asset: "rune"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "4749996000000"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "9900000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/THOR.RUJI
+asserts:
+  - .status == "Available"
+  - .balance_asset == "100000000000000"
+  - .balance_rune == "250000000000"
+  - .pool_units == "250000000000"
+  - .LP_units == "250000000000"
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "SWAP:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "4739994000000"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "9903698224852071"
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "10000000000"
+    asset: "THOR.RUJI"
+memo: "SWAP:THOR.RUNE:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "4740018951394"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "9903688224852071"
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "WITHDRAW:THOR.RUJI:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "4859803781518"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "9951844112426036"

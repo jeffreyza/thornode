@@ -1,0 +1,564 @@
+{
+  "app_hash": null,
+  "app_name": "thornode",
+  "app_state": {
+    "auth": {
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "6",
+          "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
+          },
+          "sequence": "2"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "0",
+            "address": "tthor1yl6hdjhmkf37639730gffanpzndzdpmhv07zme",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "transfer",
+          "permissions": [
+            "minter",
+            "burner"
+          ]
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "1",
+            "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "asgard",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "2",
+            "address": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "thorchain",
+          "permissions": [
+            "minter",
+            "burner"
+          ]
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "3",
+            "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "reserve",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "8",
+          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "pub_key": null,
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "7",
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "A79mmwQR0zNaJgvyBZyo1g3eKxUQTlINRlNJTUFCRxUj"
+          },
+          "sequence": "2"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "4",
+            "address": "tthor17xpfvakm2amg962yls6f84z3kell8c5ljftt88",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "fee_collector",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "5",
+            "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "bond",
+          "permissions": []
+        }
+      ],
+      "params": {
+        "max_memo_characters": "256",
+        "sig_verify_cost_ed25519": "590",
+        "sig_verify_cost_secp256k1": "1000",
+        "tx_sig_limit": "7",
+        "tx_size_cost_per_byte": "10"
+      }
+    },
+    "bank": {
+      "balances": [
+        {
+          "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "coins": [
+            {
+              "amount": "4500000000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+          "coins": [
+            {
+              "amount": "354364754548",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+          "coins": [
+            {
+              "amount": "35054279972382",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "coins": [
+            {
+              "amount": "2500000000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "coins": [
+            {
+              "amount": "2469996000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+          "coins": [
+            {
+              "amount": "4821359273070",
+              "denom": "rune"
+            }
+          ]
+        }
+      ],
+      "denom_metadata": [],
+      "params": {
+        "default_send_enabled": false,
+        "send_enabled": []
+      },
+      "send_enabled": [],
+      "supply": [
+        {
+          "amount": "49700000000000",
+          "denom": "rune"
+        }
+      ]
+    },
+    "denom": {
+      "admins": []
+    },
+    "genutil": {
+      "gen_txs": []
+    },
+    "scheduler": {
+      "schedules": []
+    },
+    "thorchain": {
+      "POL": {
+        "rune_deposited": "0",
+        "rune_withdrawn": "0"
+      },
+      "THORNames": [],
+      "adv_swap_queue_items": [],
+      "affiliate_collectors": null,
+      "bond_providers": [
+        {
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "node_operator_fee": "0",
+          "providers": []
+        }
+      ],
+      "chain_contracts": [],
+      "dynamic_fee_accumulators": [],
+      "dynamic_fee_records": [],
+      "last_chain_heights": [],
+      "last_signed_height": "4",
+      "liquidity_providers": [
+        {
+          "asset": "AVAX.AVAX",
+          "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "asset_deposit_value": "1000000000",
+          "last_add_height": "1",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "rune_deposit_value": "100000000000",
+          "units": "100000000000"
+        },
+        {
+          "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999",
+          "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "asset_deposit_value": "100000000000",
+          "last_add_height": "1",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "rune_deposit_value": "100000000000",
+          "units": "100000000000"
+        }
+      ],
+      "mimirs": [
+        {
+          "key": "HALTAVAXTRADING",
+          "value": "5"
+        },
+        {
+          "key": "HALTSIGNINGAVAX",
+          "value": "5"
+        }
+      ],
+      "network": {
+        "LPIncomeSplit": "9265",
+        "NodeIncomeSplit": "735",
+        "bond_reward_rune": "184043900",
+        "total_bond_units": "5"
+      },
+      "network_fees": [
+        {
+          "chain": "AVAX",
+          "transaction_fee_rate": "80",
+          "transaction_size": "80000"
+        }
+      ],
+      "nodeMimirs": [],
+      "node_accounts": [
+        {
+          "active_block_height": "1",
+          "bond": "4821175229170",
+          "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "ip_address": "1.1.1.1",
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "pub_key_set": {
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+            "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+          },
+          "status": "Active",
+          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
+        }
+      ],
+      "observed_tx_in_voters": [
+        {
+          "actions": [
+            {
+              "chain": "AVAX",
+              "clout_spent": "0",
+              "coin": {
+                "amount": "9019300200",
+                "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999"
+              },
+              "gas_rate": "120",
+              "in_hash": "3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "max_gas": [
+                {
+                  "amount": "960000",
+                  "asset": "AVAX.AVAX",
+                  "decimals": "8"
+                }
+              ],
+              "original_memo": "OUT:3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            }
+          ],
+          "finalised_height": "4",
+          "height": "4",
+          "out_txs": [
+            {
+              "chain": "AVAX",
+              "coins": [
+                {
+                  "amount": "9019300200",
+                  "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999",
+                  "decimals": "8"
+                }
+              ],
+              "from_address": "0xd58610f89265a2fb637ac40edf59141ff873b266",
+              "gas": [
+                {
+                  "amount": "10000000000",
+                  "asset": "AVAX.AVAX"
+                }
+              ],
+              "id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "memo": "OUT:3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
+            }
+          ],
+          "outbound_height": "4",
+          "tx": {
+            "out_hashes": [
+              "0000000000000000000000000000000000000000000000000000000000000002"
+            ],
+            "status": "done",
+            "tx": {
+              "chain": "THOR",
+              "coins": [
+                {
+                  "amount": "15000000000",
+                  "asset": "THOR.RUNE"
+                }
+              ],
+              "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+              "gas": null,
+              "id": "3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "memo": "=:AVAX.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
+              "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+            }
+          },
+          "tx_id": "3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+          "txs": [
+            {
+              "out_hashes": [
+                "0000000000000000000000000000000000000000000000000000000000000002"
+              ],
+              "status": "done",
+              "tx": {
+                "chain": "THOR",
+                "coins": [
+                  {
+                    "amount": "15000000000",
+                    "asset": "THOR.RUNE"
+                  }
+                ],
+                "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+                "gas": null,
+                "id": "3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+                "memo": "=:AVAX.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
+                "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+              }
+            }
+          ]
+        }
+      ],
+      "observed_tx_out_voters": null,
+      "outbound_fee_spent_rune": [
+        {
+          "amount": "5000051256",
+          "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999"
+        }
+      ],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "689790845181",
+          "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999"
+        }
+      ],
+      "pools": [
+        {
+          "LP_units": "100000000000",
+          "asset": "AVAX.AVAX",
+          "balance_asset": "0",
+          "balance_rune": "210002767050",
+          "decimals": "8",
+          "pending_inbound_asset": "0",
+          "pending_inbound_rune": "0",
+          "status": "Available",
+          "synth_units": "0"
+        },
+        {
+          "LP_units": "100000000000",
+          "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999",
+          "balance_asset": "70669594700",
+          "balance_rune": "144361987498",
+          "decimals": "6",
+          "pending_inbound_asset": "0",
+          "pending_inbound_rune": "0",
+          "status": "Available",
+          "synth_units": "0"
+        }
+      ],
+      "reference_memos": [],
+      "reserve_contributors": null,
+      "rune_pool": {
+        "pool_units": "0",
+        "reserve_units": "0",
+        "rune_deposited": "0",
+        "rune_withdrawn": "0"
+      },
+      "rune_providers": [],
+      "secured_assets": [],
+      "sol_vault_nonces": [],
+      "streaming_swaps": [],
+      "swap_queue_items": [],
+      "swapper_clout": [
+        {
+          "address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "reclaimed": "0",
+          "score": "2068431989",
+          "spent": "0"
+        },
+        {
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "reclaimed": "0",
+          "score": "2068431988",
+          "spent": "0"
+        }
+      ],
+      "tcy_claimers": [],
+      "tcy_stakers": [],
+      "trade_accounts": [],
+      "trade_units": [],
+      "tx_outs": [
+        {
+          "height": "4",
+          "tx_array": [
+            {
+              "aggregator_target_limit": "0",
+              "chain": "AVAX",
+              "clout_spent": "0",
+              "coin": {
+                "amount": "9019300200",
+                "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999"
+              },
+              "gas_rate": "120",
+              "in_hash": "3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "max_gas": [
+                {
+                  "amount": "960000",
+                  "asset": "AVAX.AVAX",
+                  "decimals": "8"
+                }
+              ],
+              "original_memo": "OUT:3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
+              "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            }
+          ]
+        }
+      ],
+      "vaults": [
+        {
+          "block_height": "2",
+          "chains": [
+            "THOR",
+            "AVAX"
+          ],
+          "coins": [
+            {
+              "amount": "0",
+              "asset": "AVAX.AVAX",
+              "decimals": "8"
+            },
+            {
+              "amount": "79688894900",
+              "asset": "AVAX.USDX-0X9999999999999999999999999999999999999999",
+              "decimals": "6"
+            }
+          ],
+          "deficit": [
+            {
+              "amount": "9049999999",
+              "asset": "AVAX.AVAX"
+            }
+          ],
+          "inbound_tx_count": "1",
+          "membership": [
+            "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+          ],
+          "outbound_tx_count": "2",
+          "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+          "routers": null,
+          "status": "ActiveVault",
+          "type": "AsgardVault"
+        }
+      ]
+    },
+    "upgrade": {},
+    "wasm": {
+      "codes": [],
+      "contracts": [],
+      "params": {
+        "code_upload_access": {
+          "addresses": [],
+          "permission": "Everybody"
+        },
+        "instantiate_default_permission": "Everybody"
+      },
+      "sequences": [
+        {
+          "id_key": "BGxhc3RDb2RlSWQ=",
+          "value": "1"
+        },
+        {
+          "id_key": "BGxhc3RDb250cmFjdElk",
+          "value": "1"
+        }
+      ]
+    }
+  },
+  "chain_id": "thorchain",
+  "consensus": {
+    "params": {
+      "abci": {
+        "vote_extensions_enable_height": "0"
+      },
+      "block": {
+        "max_bytes": "22020096",
+        "max_gas": "-1"
+      },
+      "evidence": {
+        "max_age_duration": "172800000000000",
+        "max_age_num_blocks": "100000",
+        "max_bytes": "1048576"
+      },
+      "validator": {
+        "pub_key_types": [
+          "ed25519"
+        ]
+      },
+      "version": {
+        "app": "0"
+      }
+    }
+  },
+  "initial_height": 6
+}

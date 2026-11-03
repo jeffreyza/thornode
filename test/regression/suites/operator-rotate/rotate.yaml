@@ -1,0 +1,343 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# new non-active nodes
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "1000000000000"
+memo: "BOND:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .status == "Whitelisted"
+  - .total_bond == "1000000000000"
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "1200000000000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - asset: rune
+    amount: "1000000000000"
+memo: "BOND:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_pig }}
+asserts:
+  - .status == "Whitelisted"
+  - .total_bond == "1000000000000"
+---
+########################################################################################
+# rotate with coins fails
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "1"
+memo: "OPERATOR:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 6
+  - .tx_response.raw_log | test("coin amount must be zero")
+---
+########################################################################################
+# rotate without node address fails
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("invalid memo")
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("invalid memo")
+---
+########################################################################################
+# rotate with non-THORChain address fails
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_gaia_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("invalid memo")
+---
+########################################################################################
+# node operator should still be unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .node_operator_address == "{{ addr_thor_fox }}"
+  - .total_bond == "1000000000000"
+---
+########################################################################################
+# rotate fails if halted
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: "HaltOperatorRotate"
+value: 1
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("rotate is halted")
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: "HaltOperatorRotate"
+value: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# rotate fails if in second half of churn
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: "ChurnInterval"
+value: 15
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("rotate is only allowed in the first half of churn")
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: "ChurnInterval"
+value: 43200
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# rotate fails if old operator has active node
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("cannot rotate from operator with active node")
+---
+########################################################################################
+# rotate fails if new operator has active node
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 99
+  - .tx_response.raw_log | test("cannot rotate to operator with active node")
+---
+########################################################################################
+# successful rotate
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .node_operator_address == "{{ addr_thor_cat }}"
+  - .total_bond == "1000000000000"
+  - (.total_bond|tonumber) == ([.bond_providers.providers[].bond|tonumber]|add)
+  - .bond_providers.providers|length == 1
+  - .bond_providers.providers[0].bond_address == "{{ addr_thor_cat }}"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.events[]|select(.type=="operator_rotate").attributes[]|select(.key=="signer").value == "{{ addr_thor_fox }}"
+  - .tx_response.events[]|select(.type=="operator_rotate").attributes[]|select(.key=="node_address").value == "{{ addr_thor_fox }}"
+  - .tx_response.events[]|select(.type=="operator_rotate").attributes[]|select(.key=="operator_address").value == "{{ addr_thor_cat }}"
+---
+########################################################################################
+# old operator can no longer control or bond node
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "100000000"
+memo: "BOND:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+asserts:
+  - .tx_response.code == 6
+  - .tx_response.raw_log | test("bond address is not valid for node account")
+---
+########################################################################################
+# new operator controls node
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: rune
+    amount: "100000000"
+memo: "BOND:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .total_bond == "1000100000000"
+---
+########################################################################################
+# rotate another node (pig) to cat operator
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[]|select(.node_operator_address=="{{ addr_thor_cat }}")]|length == 2'
+  - length == 3
+---
+########################################################################################
+# rotate all cat nodes to wolf
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "OPERATOR:{{ addr_thor_wolf }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[]|select(.node_operator_address=="{{ addr_thor_wolf }}")]|length == 2'
+  - length == 3

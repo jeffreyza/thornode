@@ -1,0 +1,103 @@
+# Pool state from mainnet block 23714433
+# This recreates the exact conditions for limit swap transaction:
+# E886A626D74CDDC9B85DA893272D811ADC21C76A0CCB225EC6B6C9EC14B922AB
+#
+# ETH-USDC Pool: 517,731,612,507,150 RUNE / 387,695,133,089,347 USDC
+# ETH-GUSD Pool: 15,116,987,235,918 RUNE / 11,325,887,977,642 GUSD
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "532848599743068"
+              denom: rune
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "50000000000000"
+              denom: rune
+        - address: {{ addr_thor_dog }}
+          coins:
+            - amount: "50000000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "50000000000000"
+          bond_address: {{ addr_thor_dog }}
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          pub_key_set:
+            ed25519: {{ pubkey_dog_eddsa }}
+            secp256k1: {{ pubkey_dog }}
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: 9.999.0
+      liquidity_providers:
+        - asset: ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
+          asset_address: {{ addr_eth_cat }}
+          asset_deposit_value: "387695133089347"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "517731612507150"
+          units: "127610836755029"
+        - asset: ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD
+          asset_address: {{ addr_eth_cat }}
+          asset_deposit_value: "11325887977642"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "15116987235918"
+          units: "10586030083716"
+      pools:
+        - LP_units: "127610836755029"
+          asset: ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
+          balance_asset: "387695133089347"
+          balance_rune: "517731612507150"
+          decimals: "6"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "96625271273871"
+        - LP_units: "10586030083716"
+          asset: ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD
+          balance_asset: "11325887977642"
+          balance_rune: "15116987235918"
+          decimals: "2"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "230914447622"
+      network_fees:
+        - chain: ETH
+          transaction_fee_rate: "80"
+          transaction_size: "80000"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "387695133089347"
+              asset: ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
+              decimals: "6"
+            - amount: "11325887977642"
+              asset: ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD
+              decimals: "2"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault

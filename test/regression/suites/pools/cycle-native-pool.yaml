@@ -1,0 +1,110 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: WasmPermissionless
+value: 1
+sequence: 0
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: PoolCycle
+value: 3
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "mint.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: { "id": "ruji", "amount": "10000000000000000", "metadata": { "description": "description", "display": "RUJI", "name": "Rujira", "symbol": "RUJI", "uri": "https://rujira.network" }}
+label: "ruji"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "5000000000000"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "10000000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
+  - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].code_id == "1"
+---
+# Create RUJI/RUNE pool
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "100"
+    asset: "THOR.RUJI"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "50"
+    asset: "rune"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 6
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .[0].status == "Staged"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2
+asserts:
+  - .balances[] | select(.denom == "x/ruji").amount == "100"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - . | length  == 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - . | length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2
+asserts:
+  - .balances | length == 0

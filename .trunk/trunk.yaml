@@ -1,0 +1,98 @@
+version: 0.1
+cli:
+  version: 1.22.8
+repo:
+  trunk_branch: develop
+lint:
+  definitions:
+    - name: codespell
+      commands:
+        # IDae = base64 found in wasm bytecode expected to be "idea"
+        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae,liquify,refErr,crate ${target}
+    - name: golangci-lint
+      environment:
+        - name: CGO_ENABLED
+          value: "1"
+  enabled:
+    - codespell@2.3.0
+    - black@24.10.0
+    - flake8@7.1.1
+    - git-diff-check
+    - gofmt@1.20.4
+    - golangci-lint@1.63.4
+    - hadolint@2.12.1-beta
+    - isort@5.13.2
+    - markdownlint@0.43.0
+    - prettier@3.4.2
+    - shellcheck@0.10.0
+    - shfmt@3.6.0
+    - taplo@0.9.3
+    - yamllint@1.35.1
+  ignore:
+    - linters: [ALL]
+      paths:
+        - openapi/gen
+        - "**/*gen.go"
+        # TODO: fix all lint errors in imported repos and enable lint for these.
+        - bifrost/tss/go-tss
+        - bifrost/txscript
+    - linters:
+        - prettier
+        - yamllint
+      paths:
+        - test/fixtures/endpoints/auth/accounts/malformed.json
+        - test/regression/README.md
+        - test/regression/mnt/exports/**
+        - test/regression/mnt/blocks/**
+        - test/regression/suites/**
+        - test/regression/templates/**
+    - linters:
+        - markdownlint
+      paths:
+        - .claude/skills/**
+    - linters:
+        - hadolint
+        - terrascan
+      paths:
+        - ci/Dockerfile.regtest.dockerignore
+        - ci/Dockerfile.simtest.dockerignore
+    - linters:
+        - codespell
+      paths:
+        - bifrost/pkg/chainclients/gaia/test-data/*.json
+        - bifrost/oracle/providers/mock/data/*.json
+        - common/tokenlist/*/*.json
+        - third_party/**
+        - test/regression/mnt/blocks/**
+        - bifrost/pkg/chainclients/tron/api/core
+        - chain/evm/contracts/audits/**
+actions:
+  disabled:
+    - trunk-announce
+    - trunk-check-pre-push
+    - trunk-fmt-pre-commit
+  enabled:
+    - trunk-upgrade-available
+plugins:
+  sources:
+    - id: trunk
+      ref: v1.6.6
+      uri: https://github.com/trunk-io/plugins
+runtimes:
+  enabled:
+    - go@1.26.10
+    - node@18.20.5
+    - python@3.10.8
+  definitions:
+    - type: go
+      download: go
+      linter_environment:
+        - name: GOTOOLCHAIN
+          value: go1.26.10
+        - name: PATH
+          list:
+            - "${linter}/bin"
+            # Required for compiler to support cgo
+            - "/usr/bin"
+        - name: GOPATH
+          value: ${linter}

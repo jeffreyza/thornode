@@ -1,0 +1,481 @@
+########################################################################################
+# Advanced Swap Queue Limit Swaps Tests
+#
+# This test suite validates limit swap functionality with the advanced swap queue.
+#
+# NOTE: Streaming swaps are incompatible with the advanced swap queue, so this
+# test focuses on regular limit swaps and various edge cases.
+########################################################################################
+
+# Set minimum slip basis points for testing
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Test 1: Basic limit swap that meets the price target
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:4000000" # Achievable limit
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Check MsgSwap State for the swap
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.count == 1 # State.Count - should be 1 for completed limit swap
+  - .swap.state.in == "500000" # State.In - full amount swapped
+  - .swap.state.out != "0" # State.Out - should have output amount
+  - .swap.state.deposit == "5000000" # Total deposit amount
+  - .swap.state.quantity == 10 # For limit swaps, quantity is 10
+  - .swap.trade_target == "4000000" # The limit price target
+  - .queue_type == "advanced" # Should be in advanced queue
+---
+type: create-blocks
+count: 19
+---
+# Verify swap executed and in outbound queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].in_hash == "${TXID_1}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount == "${OUT_AMOUNT=44381063}"
+  - .[0].to_address == "{{ addr_eth_fox }}"
+---
+# Clear the outbound with tx-observed-out
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_1={{ observe_txid 101 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}" # Using the achievable limit amount
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "OUT:${TXID_1}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is now empty
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 3: Expired limit swap
+########################################################################################
+type: tx-mimir
+key: StreamingLimitSwapMaxAge
+value: 10
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_3={{ observe_txid 3 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "2000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:THOR.RUNE:{{ addr_thor_fox }}:999999999999" # Impossible limit
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 11 # Wait past max age
+---
+# Should generate refund
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|map(select(.original_memo | contains("REFUND:${TXID_3}")))|length == 1
+  - .|map(select(.original_memo | contains("REFUND:${TXID_3}")) | .coin.asset)|.[0] == "BTC.BTC"
+---
+# Clear the refund outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_3={{ observe_txid 103 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${REFUND_AMOUNT=1993000}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "REFUND:${TXID_3}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is empty
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 5: Custom refund address
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_5={{ observe_txid 5 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "2500000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}/{{ addr_btc_cat }}:888888888" # Custom refund
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 11 # Wait for expiration
+---
+# Check refund to custom address
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|map(select(.original_memo | contains("REFUND:${TXID_5}")))|length == 1
+  - .|map(select(.original_memo | contains("REFUND:${TXID_5}")) | .to_address)|.[0] == "{{ addr_btc_cat }}"
+---
+# Clear the refund outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_5={{ observe_txid 105 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }} # Custom refund address
+      coins:
+        - amount: "${REFUND_AMOUNT=2493000}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "REFUND:${TXID_5}"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is empty
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 9: Market-only mode
+########################################################################################
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 2 # Market-only mode
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_9={{ observe_txid 9 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1500000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:999999999" # Limit swap should be rejected
+    block_height: 8
+    finalise_height: 8
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Should generate refund as limit swaps are not allowed in market-only mode
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|map(select(.original_memo | contains("REFUND:${TXID_9}")))|length == 1
+  - .|map(select(.original_memo | contains("REFUND:${TXID_9}")) | .coin.asset)|.[0] == "BTC.BTC"
+---
+# Clear the refund outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_9={{ observe_txid 109 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${REFUND_AMOUNT=1493000}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "REFUND:${TXID_9}"
+    block_height: 8
+    finalise_height: 8
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test 10: Limit swap modification
+########################################################################################
+# Re-enable normal mode
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_10={{ observe_txid 10 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "3500000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:888888888" # High limit
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Modify the limit swap to lower the target
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_10_MOD1={{ observe_txid 1010 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "m=<:3500000BTC.BTC:888888888ETH.ETH:20000000" # Lower target but still high enough for partial execution
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 3
+---
+# Check that swap has started executing (State.Out should be non-zero)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_10}
+asserts:
+  - .swap.state.out != "0" # Swap has started executing
+  - .swap.trade_target == "20000000" # Target was modified
+  - .swap.state.quantity > 1 # Should be a streaming swap
+  - .swap.state.count > 1 # Should have swapped a couple times
+---
+# Ensure swap is still in the queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - any(.tx.id == "${TXID_10}") # Swap should still be in queue
+---
+# Cancel the swap by setting target to 0
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_10_MOD2={{ observe_txid 1011 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "m=<:3500000BTC.BTC:20000000ETH.ETH:0" # Cancel swap
+    block_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Should have two items in outbound queue: partial swap output and refund
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - any(.in_hash == "${TXID_10}" and .coin.asset == "ETH.ETH") # Partial swap output
+  - any(.original_memo | contains("REFUND:${TXID_10}")) # Refund of remaining BTC
+  - .[0].coin.amount == "${OUT_AMOUNT_1=13263434}"
+  - .[1].coin.amount == "${OUT_AMOUNT_2=1742999}"
+---
+# Clear the swap output and refund
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_10A={{ observe_txid 110 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT_1}" # Partial swap amount
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "OUT:${TXID_10}"
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "${TXOUT_10B={{ observe_txid 111 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT_2}" # Remaining BTC after partial swap
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "REFUND:${TXID_10}"
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is empty
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Final invariant checks
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

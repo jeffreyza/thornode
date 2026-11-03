@@ -1,0 +1,309 @@
+type: env
+key: SECURED_ASSET_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# deposit btc
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "secure+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply|tonumber == 10000000
+  - .depth|tonumber == 10000000
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount|tonumber == 10000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - '[.txs[0].result.events[]|select(.type == "secured_asset_deposit")]|length == 1'
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.asset == "BTC-BTC"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.amount == "10000000"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.rune_address == "{{ addr_thor_fox }}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.asset_address == "{{ addr_btc_fox }}"
+---
+########################################################################################
+# swap secured asset to eth secured asset
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC-BTC"
+memo: "=:ETH-ETH:{{ addr_thor_fox }}:0/0/1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply|tonumber == 5000000
+  - .depth|tonumber == 5000000
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 3
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "5000000"
+  - .balances[1].denom == "eth-eth"
+  - .balances[1].amount == "41501780"
+---
+########################################################################################
+# swap secured asset to eth secured asset (but fail because we're attempting to swap too much
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "9999999999999"
+    asset: "BTC-BTC"
+memo: "=:ETH-ETH:{{ addr_thor_fox }}:0/0/1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply|tonumber == 5000000
+  - .depth|tonumber == 5000000
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 3
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "5000000"
+  - .balances[1].denom == "eth-eth"
+  - .balances[1].amount == "${ETH_REMAINING=41501780}"
+---
+########################################################################################
+# streaming swap secured asset to btc secured asset
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${ETH_REMAINING}"
+    asset: "eth-eth"
+memo: "=:BTC-BTC:{{ addr_thor_fox }}:0/1"
+---
+type: create-blocks
+count: 9
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "${REMAINING_UNITS=9520493}"
+  - .depth == "${REMAINING_UNITS}"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "btc-btc"
+  - .balances[0].amount == "${REMAINING_UNITS}"
+  # Prepare the withdraw amount (~2/3rds of remaining units, leaving a round number).
+  - ${REMAINING_UNITS} * (1/3) | log10 | floor | pow(10;.) == ${DIGITS=1000000}
+  - ${REMAINING_UNITS} * (1/3) / ${DIGITS} | floor * ${DIGITS} == ${NEW_REMAINING_UNITS=3000000}
+  - ${REMAINING_UNITS} - ${NEW_REMAINING_UNITS} == ${WITHDRAW_AMOUNT=6520493}
+---
+########################################################################################
+# withdraw btc
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${WITHDRAW_AMOUNT}"
+    asset: "BTC-BTC"
+memo: "secure-:{{ addr_btc_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - '[.txs[0].result.events[]|select(.type == "secured_asset_withdraw")]|length == 1'
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.asset == "BTC-BTC"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.amount == "${WITHDRAW_AMOUNT}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.rune_address == "{{ addr_thor_fox }}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.asset_address == "{{ addr_btc_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply|tonumber == ${NEW_REMAINING_UNITS}
+  - .depth|tonumber == ${NEW_REMAINING_UNITS}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ native_txid -1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6513493}"
+  - ${WITHDRAW_AMOUNT} - ${OUT_FEE} == ${OUT_AMOUNT}
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# withdraw btc remainder
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${NEW_REMAINING_UNITS}"
+    asset: "BTC-BTC"
+memo: "secure-:{{ addr_btc_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - '[.txs[0].result.events[]|select(.type == "secured_asset_withdraw")]|length == 1'
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.asset == "BTC-BTC"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.amount == "${NEW_REMAINING_UNITS}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.rune_address == "{{ addr_thor_fox }}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_withdraw")|.asset_address == "{{ addr_btc_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "0"
+  - .depth == "0"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ native_txid -1 }}"
+  - ${NEW_REMAINING_UNITS} - ${OUT_FEE} == ${OUT_AMOUNT=2993000}
+  - .[0].coin.amount == "${OUT_AMOUNT}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

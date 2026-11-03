@@ -1,0 +1,267 @@
+########################################################################################
+## Comprehensive modify limit swap testing - focused and non-redundant
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Setup: Create initial limit swaps for testing
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:8998438"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=<:ETH.ETH:{{ addr_eth_cat }}:2000000000000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 2
+---
+########################################################################################
+# Test 1: Basic modification (change target amount)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000THOR.RUNE:8998438BTC.BTC:9500000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -3 }}
+asserts:
+  - .swap.trade_target == "9500000"
+  - .queue_type == "advanced"
+---
+########################################################################################
+# Test 2: Cancellation (zero target amount)
+########################################################################################
+# Check balance before cancellation
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2494998000000  # Balance after initial swap
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:5000000000THOR.RUNE:2000000000000000000ETH.ETH:0"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|map(select(.tx.id == "{{ native_txid 3 }}"))|length == 0  # Swap should be removed from queue
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499995999999  # Should have refunded 5B RUNE back to original balance
+---
+########################################################################################
+# Test 3: Error cases (should fail gracefully)
+########################################################################################
+# Wrong user trying to modify
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000THOR.RUNE:7500000BTC.BTC:6000000"
+---
+type: create-blocks
+count: 1
+---
+# Same source/target assets (validation error)
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000THOR.RUNE:7500000THOR.RUNE:6000000"
+---
+type: create-blocks
+count: 1
+---
+# Fox's swap should remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "9500000"  # Should not have changed
+---
+########################################################################################
+# Test 4: Cross-chain modification, bad auth example
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:500000000000000000"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:1000000BTC.BTC:500000000000000000ETH.ETH:300000000000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+asserts:
+  - .swap.trade_target == "500000000000000000"
+---
+########################################################################################
+# Test 5: Multiple matching swaps (only first should be modified)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:15000000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:15000000"
+---
+type: create-blocks
+count: 1
+---
+# Check that swaps are in the advanced queue before modifying
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length >= 2  # Should have at least 2 swaps in queue
+---
+# Modify only the first matching swap (not both)
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:2000000000THOR.RUNE:15000000BTC.BTC:22000000"
+---
+type: create-blocks
+count: 1
+---
+# Only the first swap should be updated
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 10 }}
+asserts:
+  - .swap.trade_target == "22000000"
+---
+# The second swap should remain unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 11 }}
+asserts:
+  - .swap.trade_target == "15000000"
+---
+########################################################################################
+# Test 6: Additional swap modification test
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "3000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:5000000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:3000000000THOR.RUNE:5000000BTC.BTC:4500000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 13 }}
+asserts:
+  - .swap.trade_target == "4500000"
+---
+########################################################################################
+# Test 7: Event generation verification
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events[]|select(.type == "limit_swap_mod")|length > 0
+---
+########################################################################################
+# Test 8: New swap details endpoint
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap != null
+  - .status == "queued"
+  - .queue_type == "advanced"
+---
+########################################################################################
+# Final verification: Queue integrity
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap >= 5  # Should have all our test swaps (2 initial - 1 cancelled + 1 cross-chain + 2 test5 + 1 test6)

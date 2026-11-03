@@ -1,0 +1,238 @@
+type: env
+key: TCY_CLAIMING_SWAP_HALT
+value: "0"
+---
+type: env
+key: BLOCKS_PER_YEAR
+value: "1825"
+---
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_tcy_claim }}
+          coins:
+            - amount: "${INIT_CLAIMING_RUNE=2500000000000}"
+              denom: rune
+        - address: {{ addr_thor_dog }}
+          coins:
+            - amount: "${INIT_DOG_TCY=400000000000000}"
+              denom: tcy
+            - amount: "${INIT_DOG_RUNE=25000004000000}"
+              denom: rune
+        - address: {{ addr_thor_fish }}
+          coins:
+            - amount: "${INIT_FISH_RUNE=10800000000}"
+              denom: rune
+            - amount: "${INIT_FISH_TCY=1000000000}"
+              denom: tcy
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "0"
+            address: {{ addr_module_tcy_claim }}
+            pub_key: ~
+            sequence: "0"
+          name: tcy_claim
+          permissions: []
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_dog }}
+          pub_key: null
+          account_number: "1"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "2"
+          sequence: "0"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_CLAIMING_RUNE}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_DOG_RUNE}
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${INIT_DOG_TCY}
+---
+# Create TCY/RUNE pool
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "${INIT_DOG_TCY}"
+    asset: "tcy"
+memo: "ADD:THOR.TCY:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "${INIT_DOG_RUNE_MINUS_FEES=25000000000000}"
+    asset: "rune"
+memo: "ADD:THOR.TCY:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_CLAIMING_RUNE}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/THOR.TCY
+asserts:
+  - .status == "Available"
+  - .balance_asset == "${INIT_DOG_TCY}"
+  - .balance_rune == "${INIT_DOG_RUNE_MINUS_FEES}"
+  - .pool_units == "25000000000000"
+  - .LP_units == "25000000000000"
+---
+type: create-blocks
+count: 2
+---
+# After swap claiming module should only have tcy from swap
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 36363636363636
+---
+# No claimer records exist in this suite, so all TCY in the claim module is protocol-owned.
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+asserts:
+  - .amount|tonumber == 36363636363636
+---
+type: create-blocks
+count: 5
+---
+# Trigger another distribution that should have the same balance since it doesn't have enough rune to swap
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT=36363636363636}
+---
+# Swap RUNE -> TCY and verify fees goes to Claiming module
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "${INIT_FISH_RUNE_MIN_FEES=10000000000}"
+    asset: "rune"
+memo: "SWAP:THOR.TCY:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${SWAP_FEES=3636363}
+---
+# RUNE swap fees accumulating in the claim module don't change protocol-owned TCY.
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+asserts:
+  - .amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
+---
+# Swap TCY -> RUNE and verify fees goes to Claiming module
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "${INIT_FISH_TCY}"
+    asset: "tcy"
+memo: "SWAP:THOR.RUNE:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${SWAP_FEES}+${SECOND_SWAP_FEES=208}
+---
+# Swap RUNE -> TCY with affiliate fees
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY=132135289094}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 871679573
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "500000000"
+    asset: "rune"
+memo: "SWAP:THOR.TCY:{{ addr_thor_fish }}::{{ addr_thor_pig }}:100"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_INIT_AFF_FEE=4999998}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY}+${FISH_SWAPED_TCY=6540496773}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_POST_SWAP_RUNE=369679573}
+---
+# Swap TCY -> RUNE with affiliate fees
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "${FISH_SWAPED_TCY}"
+    asset: "tcy"
+memo: "SWAP:THOR.RUNE:{{ addr_thor_fish }}::{{ addr_thor_pig }}:100"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_INIT_AFF_FEE}+${PIG_SECOND_AFF_FEE=4949821}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_POST_SWAP_RUNE}+${FISH_SECOND_RUNE_SWAP=488032317}
+  

@@ -1,0 +1,128 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "simple.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+admin: {{ addr_thor_dog }}
+label: "simple-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
+  - .txs[0].result.events[4].type == "pin_code"
+  - .txs[0].result.events[4].code_id == "1"
+  - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[5].code_id == "1"
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+asserts:
+  - .contract_info.admin == "{{ addr_thor_dog }}"
+---
+type: tx-update-admin
+contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+sender: {{ addr_thor_fox }}
+new_admin: {{ addr_thor_cat }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 4
+  - .txs[0].result.log|contains("unauthorized")
+---
+type: tx-update-admin
+contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+sender: {{ addr_thor_dog }}
+new_admin: {{ addr_thor_cat }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+  - .txs[0].result.events[4].new_admin_address == "{{ addr_thor_cat }}"
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+asserts:
+  - .contract_info.admin == "{{ addr_thor_cat }}"
+---
+type: tx-clear-admin
+contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+sender: {{ addr_thor_fox }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 4
+  - .txs[0].result.log|contains("unauthorized")
+---
+type: tx-clear-admin
+contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+sender: {{ addr_thor_cat }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+  - .txs[0].result.events[4].new_admin_address == ""
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+asserts:
+  - .contract_info.admin == ""
+---
+type: tx-update-admin
+contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+sender: {{ addr_thor_cat }}
+new_admin: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 4
+  - .txs[0].result.log|contains("unauthorized")

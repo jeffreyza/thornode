@@ -1,0 +1,193 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_thor_dog }}
+          coins:
+            - denom: rune
+              amount: "500000000000"
+        - address: {{ addr_thor_cat }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_thor_fox }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_module_reserve }}
+          coins:
+            - amount: "3500000000000"
+              denom: rune
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "500000000000"
+              denom: rune  
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "500000000000" # reduced by factor of 10 from default
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check total bonded RUNE  
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - length == 1 # Only one node, so effective security bond equals  total effective bond equals total active bond.
+  - .|[.[].total_bond|tonumber] | add == ${BOND=500000000000}
+  # (Similarly, no unpooled Assets, so vaults liquidity RUNE value equals pooled Assets RUNE value.)
+---
+########################################################################################
+# Check total pooled RUNE
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+  - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=200000066590}
+  - 100 * ${TOTAL_POOLED_RUNE} / ${BOND} | round == ${SECURED_PROPORTION=40} # (%)
+---
+########################################################################################
+# pool and bond reward calculations
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | length == 0
+  # No swap events so no liquidity fees.
+  - .|[..|select(.type?=="rewards")] | length == 1
+  - ..|select(.type?=="rewards").bond_reward == "${BOND_REWARD=44394}"
+  - ..|select(.type?=="rewards") | ([.[]|tonumber?] | add) - (.bond_reward|tonumber) == ${POOL_REWARDS=66590}
+  # Pool rewards includes the returned portion of deducted liquidity fees.
+  - 100 * ${BOND_REWARD} / (${BOND_REWARD} + ${POOL_REWARDS}) | round == ${SECURED_PROPORTION}
+  # (%, securing bond gets same proportion as the secured proportion of it,
+  # approaching 0% at secured 0% of securing
+  # and 100% at secured 100% of securing)
+---
+########################################################################################
+# swap to rune
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Update pooled RUNE after the swap.
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195376441927}
+  - 100 * ${TOTAL_POOLED_RUNE} / ${BOND} | round == ${SECURED_PROPORTION=39} # (%)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | add == 226757445
+  - .|[..|select(.type?=="rewards")] | length == 1
+  - ..|select(.type?=="rewards").bond_reward == "${BOND_REWARD=88586752}"
+  - ..|select(.type?=="rewards") | ([.[]|tonumber?] | add) - (.bond_reward|tonumber) == ${POOL_REWARDS=138281684}
+  # Pool rewards includes the returned portion of deducted liquidity fees.
+  - 100 * ${BOND_REWARD} / (${BOND_REWARD} + ${POOL_REWARDS}) | round == ${SECURED_PROPORTION}
+  # (%, securing bond gets same proportion as the secured proportion of it,
+  # approaching 0% at secured 0% of securing
+  # and 100% at secured 100% of securing)
+---
+type: tx-mimir
+key: PendulumAssetsBasisPoints
+value: ${ASSETS_BPS=5000}
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | length == 0
+  # No swap events so no liquidity fees.
+  - .|[..|select(.type?=="rewards")] | length == 1
+  - ..|select(.type?=="rewards").bond_reward == "${BOND_REWARD=21684}"
+  - ..|select(.type?=="rewards") | ([.[]|tonumber?] | add) - (.bond_reward|tonumber) == ${POOL_REWARDS=89300}
+  # Pool rewards includes the returned portion of deducted liquidity fees.
+  - (100 * ${BOND_REWARD} / (${BOND_REWARD} + ${POOL_REWARDS}) | round) == (${SECURED_PROPORTION} * ${ASSETS_BPS}/10000 | round)
+  # Because the pendulum only only perceives half the Assets, it decreases the node yield and increases the pool yield.
+---
+########################################################################################
+# swap to rune after mimir adjustment
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Update pooled RUNE after the swap.
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=191200740012}
+  - 100 * ${TOTAL_POOLED_RUNE} / ${BOND} | round == ${SECURED_PROPORTION=38} # (%)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | add == 197058785
+  - .|[..|select(.type?=="rewards")] | length == 1
+  - ..|select(.type?=="rewards").bond_reward == "${BOND_REWARD=37667709}"
+  - ..|select(.type?=="rewards") | ([.[]|tonumber?] | add) - (.bond_reward|tonumber) == ${POOL_REWARDS=159502067}
+  # Pool rewards includes the returned portion of deducted liquidity fees.
+  - (100 * ${BOND_REWARD} / (${BOND_REWARD} + ${POOL_REWARDS}) | round) == (${SECURED_PROPORTION} * ${ASSETS_BPS}/10000 | round)

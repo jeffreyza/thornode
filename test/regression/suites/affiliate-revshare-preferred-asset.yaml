@@ -1,0 +1,138 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# register thorname "t" owned by cat with preferred asset BTC.BTC.
+# Memo: ~:Name:Chain:Address:Owner:PreferredAsset
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .preferred_asset == "BTC.BTC"
+---
+########################################################################################
+# add a BTC alias for cat under the same thorname so the conversion outbound
+# has a destination on the BTC chain.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:BTC:{{ addr_btc_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .preferred_asset == "BTC.BTC"
+  # both THOR and BTC aliases are present
+  - (.aliases | map(.chain) | sort) == ["BTC", "THOR"]
+---
+########################################################################################
+# Lower PreferredAssetOutboundFeeMultiplier to 1 so a single REVSHARE
+# payout is enough to cross the AffiliateCollector flush threshold and
+# trigger a conversion swap + BTC outbound. Default is 100.
+########################################################################################
+type: tx-mimir
+key: PreferredAssetOutboundFeeMultiplier
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/PREFERREDASSETOUTBOUNDFEEMULTIPLIER
+asserts:
+  - . == 1
+---
+########################################################################################
+# enable REVSHARE-t at 5000 bps (max). Largest possible bps maximizes the
+# RUNE that lands in AffiliateCollector per swap.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 5000
+---
+########################################################################################
+# Single swap naming "t" as first affiliate with bps=0 (no user-side cut,
+# pure REVSHARE path). End-of-block processRevShare credits cat's
+# AffiliateCollector entry AND, since the threshold mimir is lowered to
+# 1× outbound fee, runs the threshold check + triggerPreferredAssetSwap
+# in the same block. Conversion swap queues; BTC outbound lands in the
+# next block.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::t:0"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share" and .thorname=="T")] | length == 1
+  - (.|[..|select(.type?=="rev_share" and .thorname=="T")])[0].owner == "{{ addr_thor_cat }}"
+  - (.|[..|select(.type?=="rev_share" and .thorname=="T")])[0].bps == "5000"
+  - ((.|[..|select(.type?=="rev_share" and .thorname=="T")])[0].payout | tonumber) > 0
+---
+########################################################################################
+# Advance one more block. The conversion swap queued in block N's
+# end-of-block fires; a BTC scheduled_outbound to addr_btc_cat is created.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - (.|[..|select(.type?=="scheduled_outbound" and .to_address=="{{ addr_btc_cat }}" and .coin_asset=="BTC.BTC")] | length) >= 1
+---
+########################################################################################
+# After the flush, the per-thorname AffiliateCollector entry is fully
+# drained. With memo bps=0 there's no user-side cut to leave a residual.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - (.affiliate_collector_rune | tonumber) == 0

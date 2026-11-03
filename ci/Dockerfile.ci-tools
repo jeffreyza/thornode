@@ -1,0 +1,27 @@
+# Tools image for the dind jobs in .gitlab-ci.yml, so they stop running
+# `apk add` against the Alpine mirror on every job. The build-ci-tools-image
+# job builds it on protected branches and pushes it to
+# $CI_REGISTRY_IMAGE/ci/tools:$CI_TOOLS_VERSION. It never overwrites a tag.
+#
+# To change it: edit this file and bump CI_TOOLS_VERSION in one MR. Once that
+# is merged and the develop pipeline has pushed the image, point CI_TOOLS_IMAGE
+# in .gitlab-ci.yml at the new tag in a second MR. An MR cannot use an image
+# it introduces, because only protected pipelines push here.
+#
+# The Go toolchain is a floor, not a pin: with GOTOOLCHAIN=auto a go.mod
+# toolchain bump downloads the newer Go instead of breaking the jobs.
+
+ARG DOCKER_MIRROR=
+FROM ${DOCKER_MIRROR}golang:1.26.10-alpine AS go
+
+FROM ${DOCKER_MIRROR}docker:28.5.2
+
+ENV CI_TOOLS_VERSION=3
+
+# docker:28.5.2 already ships the buildx and compose CLI plugins.
+# hadolint ignore=DL3018
+RUN apk add --no-cache bash curl findutils git jq make protoc python3 sed wget
+
+COPY --from=go /usr/local/go /usr/local/go
+ENV GOTOOLCHAIN=auto \
+    PATH=/usr/local/go/bin:/root/go/bin:$PATH

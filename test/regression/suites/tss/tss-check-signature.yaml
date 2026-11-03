@@ -1,0 +1,269 @@
+type: env
+key: CHURN_INTERVAL
+value: "2"
+---
+type: env
+key: CHURN_RETRY_INTERVAL
+value: "2"
+---
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "10000000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_fox }}
+          bond_address: {{ addr_thor_fox }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fox }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_fox }}
+          version: {{ version }}
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 4
+---
+# Churn co-schedules the regular Asgard and XMR monovault keygens at height 2.
+# The XMR result-validity floor keeps that original keygen block pending beyond
+# ChurnRetryInterval, so every report below must remain bound to height 2 rather
+# than assuming a replacement keygen was scheduled at each retry height.
+# Each signature-quorum scenario uses a distinct candidate pool pubkey so its
+# TSS voter remains independent while all candidates bind to the same keygen.
+########################################################################################
+# no signatures provided will fail the check
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${NO_SIG_POOL_PUBKEY=tthorpub1addwnpepqtunpzspjfvvxyzfx38ct7ya2g5m2vwggkpklxdsscqlzyauuqm0j005zl9}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: tx-tss-pool
+signer: {{ addr_thor_cat }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${NO_SIG_POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: tx-tss-pool
+signer: {{ addr_thor_fox }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${NO_SIG_POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0].block_height == 2
+  - .[0].membership|length == 1
+---
+########################################################################################
+# 1 valid signature still fails
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY=tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: ${SIGNATURE=TAmrPfb9LqTkvdCld4iUqVi/YB7BLRDCpuH7bJV0ByJiv5aJOw/0XkxabmVmF55FItcygEMoiNv5dTZV0U0BKQ==}
+---
+type: tx-tss-pool
+signer: {{ addr_thor_cat }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: tx-tss-pool
+signer: {{ addr_thor_fox }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0].block_height == 2
+  - .[0].membership|length == 1
+---
+########################################################################################
+# invalid signature fails transaction
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0].block_height == 2
+  - .[0].membership|length == 1
+---
+########################################################################################
+# 2 valid signatures successfully create new vault
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${FINAL_POOL_PUBKEY=tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: ${FINAL_SIGNATURE=t+9a8BHVrBy/FwPaH2Sk3Lq0hmcJLHWhrNNjEKinnpArmo3rAs7+2b2EC4LoDnLG0ktwZp3/j67aEQAOPCtmSQ==}
+---
+type: tx-tss-pool
+signer: {{ addr_thor_cat }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${FINAL_POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: ${FINAL_SIGNATURE}
+---
+type: tx-tss-pool
+signer: {{ addr_thor_fox }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${FINAL_POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0].block_height == 11
+  - .[0].membership|length == 3

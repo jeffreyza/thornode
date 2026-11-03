@@ -1,0 +1,40 @@
+[mining]
+miner_address = "tmGn7qKhnpbnwZPsaPt9XXAQz1Q3HAUCrwh"
+
+[network]
+network = "Regtest"
+initial_testnet_peers = []
+initial_mainnet_peers = []
+
+[network.testnet_parameters.activation_heights]
+NU5 = 1
+NU6 = 1
+"NU6.1" = 1
+"NU6.2" = 1
+"NU6.3" = 1
+
+[network.testnet_parameters.post_nu6_funding_streams.height_range]
+start = 1
+end = 10000
+
+[[network.testnet_parameters.post_nu6_funding_streams.recipients]]
+receiver = "Deferred"
+numerator = 12
+
+[[network.testnet_parameters.lockbox_disbursements]]
+address = "t2RnBRiqrN1nW4ecZs1Fj3WWjNdnSs4kiX8"
+amount = 75000000
+
+[state]
+# Preserve the chain and funded outputs across restarts of the same container.
+# Ephemeral mode ignores cache_dir and discards this state on restart.
+cache_dir = "/home/zebra/.cache/zebra"
+ephemeral = false
+# Recent, non-finalized blocks are not yet in the finalized database.
+# Save their backup synchronously on every commit instead of periodically,
+# so fast simulation mining does not leave funding outputs waiting for backup.
+debug_skip_non_finalized_state_backup_task = true
+
+[rpc]
+listen_addr = "0.0.0.0:18232"
+enable_cookie_auth = false

@@ -1,0 +1,51 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
+  - .[]|select((.chains | index("XMR")) != null)|.status == "ActiveVault"
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("THOR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("XMR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|.pub_key_frost == "{{ pubkey_dog_eddsa }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:XMR.XMR:{{ addr_xmr_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "XMR"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].to_address == "{{ addr_xmr_cat }}"
+  - .[0].coin.asset == "XMR.XMR"
+  - .[0].coin.amount|tonumber > 0
+  - .[0].max_gas[0].asset == "XMR.XMR"
+  - .[0].max_gas[0].amount|tonumber > 0

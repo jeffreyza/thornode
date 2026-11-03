@@ -1,0 +1,75 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+  - .[0].asset == "BTC.BTC"
+  - .[0].trading_halted == false
+  - .[1].asset == "ETH.ETH"
+  - .[1].trading_halted == false
+  - .[2].asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
+  - .[2].trading_halted == false
+  - .[3].asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
+  - .[3].trading_halted == false
+  - .[4].asset == "ETH.USDZ-0X9999999999999999999999999999999999999999"
+  - .[4].trading_halted == false
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HALTBTCTRADING
+value: 1
+---
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+  - .[0].asset == "BTC.BTC"
+  - .[0].trading_halted == true
+  - .[1].asset == "ETH.ETH"
+  - .[1].trading_halted == false
+  - .[2].asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
+  - .[2].trading_halted == false
+  - .[3].asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
+  - .[3].trading_halted == false
+  - .[4].asset == "ETH.USDZ-0X9999999999999999999999999999999999999999"
+  - .[4].trading_halted == false
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HALTBTCTRADING
+value: 0
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HALTETHTRADING
+value: 1
+---
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+  - .[0].asset == "BTC.BTC"
+  - .[0].trading_halted == false
+  - .[1].asset == "ETH.ETH"
+  - .[1].trading_halted == true
+  - .[2].asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
+  - .[2].trading_halted == true
+  - .[3].asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
+  - .[3].trading_halted == true
+  - .[4].asset == "ETH.USDZ-0X9999999999999999999999999999999999999999"
+  - .[4].trading_halted == true

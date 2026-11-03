@@ -1,0 +1,122 @@
+########################################################################################
+# Stable Reserve - STABLE+ deposit
+#
+# A contributor deposits an eligible stable (USDC) into the Stable Reserve via a
+# STABLE+ inbound. Eligibility requires a TOR-anchor pool AND a healthy oracle
+# price, so the suite must seed an oracle price in the SAME block as the deposit
+# (oracle prices are wiped every BeginBlock). Asserts the secured inventory mints
+# into the stable_reserve module, the contributor credit is recorded, and the
+# stable_reserve_deposit event is emitted.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 4
+---
+########################################################################################
+# enable TOR anchors for USDC and USDT (required for Stable Reserve eligibility)
+########################################################################################
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - ."TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999" == 1
+  - ."TORANCHOR-ETH-USDT-0X9999999999999999999999999999999999999999" == 1
+---
+########################################################################################
+# seed oracle prices (ebifrost injects the feed first in every subsequent block)
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+########################################################################################
+# deposit 100 USDC into the Stable Reserve
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 2
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# secured inventory minted into the stable_reserve module
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/ETH-USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .supply|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+asserts:
+  - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")]|length == 1'
+  - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")][0].amount|tonumber > 0'
+---
+########################################################################################
+# contributor credit recorded against the L1 asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .credit|tonumber > 0
+---
+########################################################################################
+# stable_reserve view reports the inventory as healthy
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - .enabled == true
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")]|length == 1'
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount|tonumber > 0'
+---
+########################################################################################
+# deposit emitted the stable_reserve_deposit event
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 1'
+  - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")][0].contributor == "{{ addr_eth_fox }}"'

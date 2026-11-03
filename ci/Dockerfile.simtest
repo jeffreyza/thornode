@@ -1,0 +1,41 @@
+ARG DOCKER_MIRROR=
+FROM ${DOCKER_MIRROR}golang:1.26.10
+
+ENV GOBIN=/go/bin
+ENV GOPATH=/go
+ENV GOOS=linux
+# tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org/sumdb
+# so `go mod download` resolves it via the git insteadOf below.
+ENV GOPRIVATE=gitlab.com/thorchain/tss/tss-lib-private.git
+
+RUN mkdir /simtest
+
+WORKDIR /app
+COPY go.mod go.sum ./
+COPY test/simulation/go.mod test/simulation/go.sum ./test/simulation/
+# Authenticate the private fetch with the go_private_auth BuildKit secret
+# ("user:token", chosen by scripts/ci-go-private-auth.sh in CI).
+# required=false keeps local `make` builds working without it.
+# File-based mount instead of env= so hadolint 2.12.1-beta can parse the RUN.
+RUN --mount=type=secret,id=go_private_auth,required=false \
+    --mount=type=cache,target=/go/pkg/mod \
+    if [ -s /run/secrets/go_private_auth ]; then \
+      git config --global url."https://$(cat /run/secrets/go_private_auth)@gitlab.com/thorchain/tss/".insteadOf "https://gitlab.com/thorchain/tss/"; \
+    fi && \
+    go mod download && \
+    rm -f /root/.gitconfig
+
+# Separate RUN so we can WORKDIR-switch (hadolint DL3003 forbids `cd` in RUN).
+WORKDIR /app/test/simulation
+RUN --mount=type=secret,id=go_private_auth,required=false \
+    --mount=type=cache,target=/go/pkg/mod \
+    if [ -s /run/secrets/go_private_auth ]; then \
+      git config --global url."https://$(cat /run/secrets/go_private_auth)@gitlab.com/thorchain/tss/".insteadOf "https://gitlab.com/thorchain/tss/"; \
+    fi && \
+    go mod download && \
+    rm -f /root/.gitconfig
+
+WORKDIR /app
+COPY . .
+
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build make _build-test-simulation

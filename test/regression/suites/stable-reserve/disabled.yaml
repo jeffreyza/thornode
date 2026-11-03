@@ -1,0 +1,82 @@
+########################################################################################
+# Stable Reserve - disabled-feature guard
+#
+# With StableReserveEnabled=0 every module path short-circuits before any oracle
+# price or eligibility check. A STABLE+ inbound is rejected (no credit, no module
+# inventory) and refunded, and EndBlock is a no-op. No price feed is needed.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# disable the Stable Reserve (mocknet defaults it on)
+########################################################################################
+type: tx-mimir
+key: StableReserveEnabled
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - .enabled == false
+---
+########################################################################################
+# STABLE+ inbound while disabled: rejected and refunded (no credit, no inventory)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 2
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# the deposit was rejected: refund scheduled, no credit, no module inventory
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type == "refund")]|length == 1'
+  - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "0"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+asserts:
+  - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")]|length == 0'

@@ -1,0 +1,162 @@
+# Without a DASH override, inbound and outbound observations use the global window.
+# Keep operation separators in this suite so the runner can track source lines.
+{{ template "6-validators-btc-eth-pool-state.yaml" }}
+---
+# State operations append arrays. Clear the old pool/vault fixtures first while
+# retaining the six validator accounts and their bonds.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      liquidity_providers: null
+      pools: null
+      network_fees: null
+      vaults: null
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+# Replace the one-member fixture vault with the six-member vault below.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults: null
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        # Pin the refund fee to the reported 2 duffs/byte * 2000 bytes.
+        - key: MinOutboundFeeMultiplierBasisPoints
+          value: "10000"
+        - key: MaxOutboundFeeMultiplierBasisPoints
+          value: "10000"
+        - key: MinimumL1OutboundFeeUSD
+          value: "0"
+        - key: ObservationDelayFlexibility
+          value: "2"
+
+        - key: MissingObservationGuardBps
+          value: "10000"
+      vaults:
+        - block_height: "0"
+          chains: [THOR, DASH, ETH]
+          coins:
+            - asset: DASH.DASH
+              amount: "10000000000"
+              decimals: "8"
+            - asset: ETH.ETH
+              amount: "1000000000"
+              decimals: "8"
+          membership:
+            - {{ pubkey_cat }}
+            - {{ pubkey_fox }}
+            - {{ pubkey_pig }}
+            - {{ pubkey_frog }}
+            - {{ pubkey_goat }}
+            - {{ pubkey_hawk }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+{{ template "dash-credit-in" addr_thor_cat }}
+---
+{{ template "dash-credit-in" addr_thor_fox }}
+---
+{{ template "dash-credit-in" addr_thor_pig }}
+---
+{{ template "dash-credit-in" addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].to_address == "{{ addr_dash_cat }}"
+  - .[0].coin.asset == "DASH.DASH"
+  - .[0].coin.amount | tonumber == ${OUT_AMOUNT=99996000}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points] == [2]'
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [2]'
+---
+# Goat observes on the last allowed block; Hawk follows one block too late.
+type: create-blocks
+count: 1
+---
+{{ template "dash-credit-in" addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points] == [0]'
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [2]'
+---
+{{ template "dash-credit-in" addr_thor_hawk }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [3]'
+---
+# Repeat for the resulting finalized refund outbound.
+{{ template "dash-credit-out" addr_thor_cat }}
+---
+{{ template "dash-credit-out" addr_thor_fox }}
+---
+{{ template "dash-credit-out" addr_thor_pig }}
+---
+{{ template "dash-credit-out" addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points] == [2]'
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [5]'
+---
+type: create-blocks
+count: 1
+---
+{{ template "dash-credit-out" addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points] == [0]'
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [5]'
+---
+{{ template "dash-credit-out" addr_thor_hawk }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - '[.[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points] == [6]'
+  - '[.[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points] == [0]'

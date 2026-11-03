@@ -1,0 +1,142 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Store and instantiate mint.wasm (has contract_info via cw2)
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "mint.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: { "id": "ruji", "amount": "10000000000000000", "metadata": { "description": "description", "display": "RUJI", "name": "Rujira", "symbol": "RUJI", "uri": "https://rujira.network" }}
+label: "ruji"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+# Query single contract info
+type: check
+endpoint: http://localhost:1317/thorchain/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+asserts:
+  - .info.address == "${MINT_CONTRACT=tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f}"
+  - .info.contract == "rujira-mint"
+  - .info.version == "1.0.1"
+---
+# Query all contract infos
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+asserts:
+  - .infos|length == 1
+  - .infos[0].address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .infos[0].contract == "rujira-mint"
+  - .infos[0].version == "1.0.1"
+---
+# Filter by exact contract name
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+params:
+  contract: rujira-mint
+asserts:
+  - .infos|length == 1
+  - .infos[0].contract == "rujira-mint"
+---
+# Filter by contract name prefix
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+params:
+  contract: rujira
+asserts:
+  - .infos|length == 1
+---
+# Filter by version prefix
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+params:
+  version: "1.0"
+asserts:
+  - .infos|length == 1
+---
+# Filter with non-matching contract name
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+params:
+  contract: nonexistent
+asserts:
+  - .infos|length == 0
+---
+# Filter with non-matching version
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+params:
+  version: "9.9"
+asserts:
+  - .infos|length == 0
+---
+# Store and instantiate counter.wasm (no contract_info stored)
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "counter.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 2
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/2/contracts
+asserts:
+  - .contracts | length == 1
+  - .contracts[0] == "${COUNTER_CONTRACT=tthor1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqzpz780}"
+---
+# Contracts list should still only contain the mint contract
+type: check
+endpoint: http://localhost:1317/thorchain/contracts
+asserts:
+  - .infos|length == 1
+  - .infos[0].contract == "rujira-mint"
+---
+# Querying a contract without contract_info should error
+type: check
+endpoint: http://localhost:1317/thorchain/contract/${COUNTER_CONTRACT}
+status: 400
+asserts:
+  - '.message|contains("does not expose contract_info")'
+---
+# Querying a non-existent contract should error
+type: check
+endpoint: http://localhost:1317/thorchain/contract/tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq
+status: 400
+asserts:
+  - '.message|contains("no wasm contract at address")'
+---
+# Querying a contract with invalid address should error
+type: check
+endpoint: http://localhost:1317/thorchain/contract/bogus
+status: 400
+asserts:
+  - '.message|contains("invalid address")'

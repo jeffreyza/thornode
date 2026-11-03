@@ -1,0 +1,92 @@
+package utxo
+
+import (
+	"encoding/base64"
+  "fmt"
+	"math/big"
+
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/rs/zerolog"
+
+  {{- range $chain, $pkg := . }}
+  {{ $chain }}ec "{{ $pkg }}"
+  {{- end }}
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	"gitlab.com/thorchain/thornode/v3/common"
+)
+
+{{- range $chain, $pkg := . }}
+
+type tssSignable{{ ToUpper $chain }} struct {
+	poolPubKey      common.PubKey
+	tssKeyManager   tss.ThorchainKeyManager
+	log             zerolog.Logger
+	thorchainHeight int64
+}
+
+func newTssSignable{{ ToUpper $chain }}(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger, thorchainHeight int64) *tssSignable{{ ToUpper $chain }} {
+	return &tssSignable{{ ToUpper $chain }}{
+		poolPubKey:      poolPubKey,
+		tssKeyManager:   tssKeyManager,
+		log:             log,
+		thorchainHeight: thorchainHeight,
+	}
+}
+
+{{- if eq $chain "bch" }}
+func (ts *tssSignable{{ ToUpper $chain }}) SignECDSA(payload []byte) (*{{ $chain }}ec.Signature, error) {
+{{- else }}
+func (ts *tssSignable{{ ToUpper $chain }}) Sign(payload []byte) (*{{ $chain }}ec.Signature, error) {
+{{- end }}
+	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, tss.ErrNotSelectedForKeysign
+	}
+	var sig {{ $chain }}ec.Signature
+	sig.R = new(big.Int).SetBytes(result[:32])
+	sig.S = new(big.Int).SetBytes(result[32:])
+
+	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
+	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
+	if sig.Verify(payload, ts.GetPubKey()) {
+		ts.log.Info().Msg("signature verified successfully")
+	} else {
+		ts.log.Error().Msg("TSS signature verification failed - signature does not match message")
+		return nil, fmt.Errorf("signature verification failed: TSS produced invalid signature for message")
+	}
+
+	return &sig, nil
+}
+
+{{- if eq $chain "bch" }}
+// SignSchnorr signs the given payload using Schnorr
+func (ts *tssSignable{{ ToUpper $chain }}) SignSchnorr(payload []byte) (*{{ $chain }}ec.Signature, error) {
+	return nil, fmt.Errorf("schnorr signature not yet implemented in TSS")
+}
+{{- end }}
+
+func (ts *tssSignable{{ ToUpper $chain }}) GetPubKey() *{{ $chain }}ec.PublicKey {
+	cpk, err := ts.poolPubKey.Decode()
+	if err != nil {
+		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
+		return nil
+	}
+	secpPubKey, err := codec.ToCmtPubKeyInterface(cpk)
+	if err != nil {
+		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
+		return nil
+	}
+	newPubKey, err := {{ $chain }}ec.ParsePubKey(secpPubKey.Bytes(), {{ $chain }}ec.S256())
+	if err != nil {
+		ts.log.Err(err).Msg("fail to parse public key")
+		return nil
+	}
+	return newPubKey
+}
+
+{{- end }}

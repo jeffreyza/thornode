@@ -1,0 +1,41 @@
+{
+  "skill_name": "mocknet-debug",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I started mocknet with make run-mocknet. How do I set the HaltChurning mimir to 0 from the CLI, and why aren't my nodes churning in the first place?",
+      "expected_output": "Use make cli-mocknet, then thornode tx thorchain mimir HaltChurning 0 --from dog $TX_FLAGS (chain-id thorchain, file keyring in /cli/keys, passphrase password). Mocknet does not churn because compose sets HALT_CHURNING: 1 and the mocknet keeper falls back to that env var for unset mimirs.",
+      "files": [],
+      "assertions": [
+        "Uses chain ID `thorchain`, not `thorchain-mocknet-v1` or any other invented chain ID",
+        "Uses the file keyring from build/docker/cli/bashrc (TX_FLAGS / --keyring-dir /cli/keys), not --keyring-backend test",
+        "Explains HALT_CHURNING: 1 in build/docker/docker-compose.yml plus the env fallback in x/thorchain/keeper/v1/keeper_mimir_mocknet.go",
+        "Does not reference scripts/mocknet.sh or build/docker/mocknet/genesis.json (neither exists)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My BTC deposit on mocknet never shows up in THORChain. How do I check whether bifrost is scanning bitcoin?",
+      "expected_output": "Compare /thorchain/lastblock and Bifrost's /status/scanner on localhost:6040 with the bitcoin daemon height (docker logs docker-bitcoin-1), check inbound_addresses halted flags and HALT mimirs, and read bifrost logs via make logs-mocknet.",
+      "files": [],
+      "assertions": [
+        "Uses a real Bifrost health route on 6040 such as /status/scanner (cmd/bifrost/health.go)",
+        "Does not tell the user to curl a Bifrost /health endpoint (it does not exist)",
+        "Mentions /thorchain/lastblock or /thorchain/inbound_addresses on port 1317",
+        "Notes make logs-mocknet only follows thornode and bifrost, and shows how to read the bitcoin daemon logs separately"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to test keysign failure and jailing locally. Can I do that on the normal mocknet, and what make targets and env vars do I need?",
+      "expected_output": "Single-node mocknet has no TSS peers; use the 5-node cluster (make reset-mocknet-cluster, profile mocknet-cluster: thornode plus cat/fox/pig/frog). JAIL_TIME_KEYSIGN must be set in the shell so THORNode and Bifrost share it; mocknet constants come from constants/constants_mocknet.go and can be overridden by SNAKE_CASE env names.",
+      "files": [],
+      "assertions": [
+        "Says the single-node mocknet cannot exercise multi-party keysign/blame and points to the mocknet-cluster profile / make reset-mocknet-cluster",
+        "States the cluster has 5 THORNodes (thornode + cat, fox, pig, frog), not 1 or an invented count",
+        "Mentions JAIL_TIME_KEYSIGN as an env var read by both THORNode and Bifrost",
+        "Does not invent a make test-mocknet target (only test-mocknet-startup exists, and it runs Python unit tests of build/scripts)"
+      ]
+    }
+  ]
+}

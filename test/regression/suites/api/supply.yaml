@@ -1,0 +1,123 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test /thorchain/supply endpoint
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply
+asserts:
+  - .total == ${SUPPLY_TOTAL=501000}
+  - .circulating == ${SUPPLY_CIRCULATING=151000}
+  - .locked.reserve == ${SUPPLY_RESERVE=349999}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - rune circulating
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: rune
+  type: circulating
+asserts:
+  - . == ${SUPPLY_CIRCULATING}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - rune total
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: rune
+  type: total
+asserts:
+  - . == ${SUPPLY_TOTAL}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - rune locked
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: rune
+  type: locked
+asserts:
+  - . == ${SUPPLY_RESERVE}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - defaults to rune
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  type: total
+asserts:
+  - . == ${SUPPLY_TOTAL}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - tcy total
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: tcy
+  type: total
+asserts:
+  - . == ${TCY_TOTAL=0}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - tcy staked
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: tcy
+  type: staked
+asserts:
+  - . == ${TCY_STAKED=0}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - tcy locked (unclaimed)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: tcy
+  type: locked
+asserts:
+  - . == ${TCY_LOCKED=0}
+---
+########################################################################################
+# Test /thorchain/supply/cmc - invalid asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: invalid
+  type: total
+status: 400
+---
+########################################################################################
+# Test /thorchain/supply/cmc - invalid type for rune
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: rune
+  type: staked
+status: 400
+---
+########################################################################################
+# Test /thorchain/supply/cmc - tcy circulating
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/supply/cmc
+params:
+  asset: tcy
+  type: circulating
+asserts:
+  - . == ${TCY_CIRCULATING=0}

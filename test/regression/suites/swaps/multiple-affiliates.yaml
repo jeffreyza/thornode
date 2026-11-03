@@ -1,0 +1,420 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: tx-mimir
+key: PreferredAssetOutboundFeeMultiplier
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# TEST MULTIPLE AFFILIATES - Swaps from RUNE
+########################################################################################
+########################################################################################
+# swap rune to btc with affiliate fees over 1000bps, should fail
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::{{ addr_thor_pig }}/{{ addr_thor_cat }}/{{ addr_thor_fish }}:500"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("affiliate fee basis points can't be more than 1000")
+---
+########################################################################################
+# swap rune to btc with 3 affiliates, should all get 100 bps
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${CAT_AFF=2500000000000}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::{{ addr_thor_pig }}/{{ addr_thor_cat }}/{{ addr_thor_fish }}:100"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ native_txid -1 }}"
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=8009422}
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "98870047"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${CAT_AFF} + 98692318
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "98515068"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# swap rune to btc with 3 affiliates, should all get different bps
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_AFF=98870047}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${CAT_AFF=2500098692318}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_AFF=98515068}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::{{ addr_thor_pig }}/{{ addr_thor_cat }}/{{ addr_thor_fish }}:500/100/200"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ native_txid -1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6473308}"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${PIG_AFF} + 491890950
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${CAT_AFF} + 97892266
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${FISH_AFF} + 196107495
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+########################################################################################
+# create two affiliates, one with preferred asset, one without
+########################################################################################
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:a:ETH:{{ addr_eth_cat }}:{{ addr_thor_cat }}:ETH.ETH"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .affiliate_collector_rune == "0"
+  - .preferred_asset == "."
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/a
+asserts:
+  - .aliases[0].address == "{{ addr_eth_cat }}"
+  - .owner == "{{ addr_thor_cat }}"
+  - .preferred_asset == "ETH.ETH"
+  - .affiliate_collector_rune == "0"
+---
+########################################################################################
+# swap rune to btc with 3 affiliates, one thorname, one thorname w/ preferred asset, one rune address
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_AFF=388760997}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${CAT_AFF=2499994584584}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_AFF=294622563}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::t/a/{{ addr_thor_fish }}:100"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${PIG_AFF} + 99152420
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "${CAT_AFF}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/a
+asserts:
+  - .aliases[0].address == "{{ addr_eth_cat }}"
+  - .owner == "{{ addr_thor_cat }}"
+  - .preferred_asset == "ETH.ETH"
+  - .affiliate_collector_rune == "98999827"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount|tonumber == ${FISH_AFF} + 98847586
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].original_memo == "OUT:{{ native_txid -1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=5929586}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# swap BTC -> RUNE with 3 affiliates, one thorname, one thorname w/ preferred asset, one rune address
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}::t/{{ addr_thor_fish }}/a:100/200/50"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "${PIG_AFF=792508582}"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "${CAT_AFF}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/a
+asserts:
+  - .aliases[0].address == "{{ addr_eth_cat }}"
+  - .owner == "{{ addr_thor_cat }}"
+  - .preferred_asset == "ETH.ETH"
+  - .affiliate_collector_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result|length == 1
+  - .result[]|select(.denom == "rune").amount == "${FISH_AFF=1002660478}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="affiliate_fee")] | length == 3
+  ##
+  - .|[..|select(.type?=="affiliate_fee")][0].rune_address == "{{ addr_thor_pig }}"
+  - .|[..|select(.type?=="affiliate_fee")][0].asset == "THOR.RUNE" # pig affiliate
+  - .|[..|select(.type?=="affiliate_fee")][0].fee_bps == "100"
+  - .|[..|select(.type?=="affiliate_fee")][0].fee_amount == "304595165"
+  - .|[..|select(.type?=="affiliate_fee")][0].gross_amount == "${GROSS_AMOUNT=30459516474}"
+  - .|[..|select(.type?=="affiliate_fee")][0].thorname == "t"
+  ##
+  - .|[..|select(.type?=="affiliate_fee")][1].rune_address == "{{ addr_thor_fish }}"
+  - .|[..|select(.type?=="affiliate_fee")][1].asset == "THOR.RUNE" # fish affiliate
+  - .|[..|select(.type?=="affiliate_fee")][1].fee_bps == "200"
+  - .|[..|select(.type?=="affiliate_fee")][1].fee_amount == "609190329"
+  - .|[..|select(.type?=="affiliate_fee")][1].gross_amount == "${GROSS_AMOUNT}"
+  - .|[..|select(.type?=="affiliate_fee")][1].thorname == ""
+  ##
+  - .|[..|select(.type?=="affiliate_fee")][2].rune_address == "{{ addr_thor_cat }}"
+  - .|[..|select(.type?=="affiliate_fee")][2].asset == "THOR.RUNE" # cat affiliate
+  - .|[..|select(.type?=="affiliate_fee")][2].fee_bps == "50"
+  - .|[..|select(.type?=="affiliate_fee")][2].fee_amount == "152297582"
+  - .|[..|select(.type?=="affiliate_fee")][2].gross_amount == "${GROSS_AMOUNT}"
+  - .|[..|select(.type?=="affiliate_fee")][2].thorname == "a"

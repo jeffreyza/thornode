@@ -1,0 +1,68 @@
+# OS / IDE / Editor
+.DS_Store
+.idea
+.trunk
+.vscode
+*.swo
+*.swp
+
+# Environment
+.env*
+.envrc
+
+# Git / CI
+.git
+.gitlab-ci.yml
+
+# AI / Tools
+.cache
+.codex-tmp
+.claude
+CLAUDE.md
+CLAUDE.local.md
+
+# Documentation
+bugbounty.md
+docs
+LICENSE
+public
+README.md
+
+# Build / CI directories
+build/docker
+ci
+chain
+midgard
+semgrep
+thornode
+
+# Source not needed for image
+app-layer
+proto
+scripts
+!scripts/check-env.sh
+
+# Test
+*.prof
+coverage*
+report.xml
+test
+tmp
+
+# Dependencies / Caches
+__pycache__
+**/evm/cache/*
+node_modules
+**/target
+
+# Local scratch / binaries
+thornode-image-original
+thornode-linux-arm64
+
+
+# Tools (exclude all, then re-include needed)
+tools
+!tools/events
+!tools/generate
+!tools/recover-keyshare-backup
+!tools/thorscan

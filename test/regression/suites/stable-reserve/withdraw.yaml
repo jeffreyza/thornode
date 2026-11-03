@@ -1,0 +1,151 @@
+########################################################################################
+# Stable Reserve - STABLE- withdraw
+#
+# A contributor deposits USDC, then withdraws part of it via a STABLE- inbound. The
+# memo carries the withdrawal amount; the inbound coin is the "request coin" (a fee
+# that is swapped to RUNE for the Reserve). Asserts the filled path (outbound
+# created, credit + inventory decremented) and the oversized-request-coin guard
+# (rejected when the request coin exceeds StableReserveWithdrawalRequestMax).
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 4
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# deposit 10000000000 USDC into the Stable Reserve
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 2
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "10000000000"
+---
+########################################################################################
+# withdraw 4000000000 USDC (memo amount); request coin (100) is the fee
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 3
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable-:4000000000"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# credit and module inventory decremented by the withdrawn amount; outbound scheduled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "6000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/ETH-USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .supply == "6000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|[.[]|select(.to_address == "{{ addr_eth_fox }}")]|length == 1
+  - .|[.[]|select(.to_address == "{{ addr_eth_fox }}")][0].coin.asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .|[.[]|select(.to_address == "{{ addr_eth_fox }}")][0].coin.amount|tonumber > 0
+---
+########################################################################################
+# oversized request coin (> StableReserveWithdrawalRequestMax) is rejected; credit unchanged
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 4
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "20000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable-:100000000"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - .credit == "6000000000"

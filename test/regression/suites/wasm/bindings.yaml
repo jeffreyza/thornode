@@ -1,0 +1,201 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+# The following tests use the `bindings.wasm` contract, which implements these following interfaces.
+# Messages and query results are simply passed through the contract layer for testing
+
+# pub fn execute(
+#     _deps: DepsMut,
+#     _env: Env,
+#     _info: MessageInfo,
+#     msg: ExecuteMsg,
+# ) -> Result<Response, ContractError> {
+#     match msg {
+#         ExecuteMsg::Any(any_msg) => Ok(Response::default().add_message(CosmosMsg::Any(any_msg))),
+#     }
+# }
+
+# pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+#     match msg {
+#         QueryMsg::Grpc { path, data } => to_json_binary(&deps.querier.query_grpc(path, data)?),
+#     }
+# }
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "bindings.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "bindings"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+# Query payload here is a base64 encoding of the raw message bytes. This will be 100x easier with interchaintest
+# Query here is base64(json({ path: "/types.Query/Pool", data: base64(proto(QueryPoolRequest {Asset: "BTC.BTC"})) }))
+# data: CgdCVEMuQlRD
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJncnBjIjp7InBhdGgiOiIvdHlwZXMuUXVlcnkvUG9vbCIsImRhdGEiOiJDZ2RDVkVNdVFsUkQifX0=
+asserts:
+  - .data == "CgdCVEMuQlRDEgFiGglBdmFpbGFibGUgCCoBMDIBMDoJMTAwMDAwMDAwQgwxMDAwMDQzNTA1ODNKATBSDDEwMDAwMDAwMDAwMFoMMTAwMDAwMDAwMDAwYgEwagEwcgEwegEwggEBMIoBCTEwMDAwMDAwMJoBCDcwMDAwMDAwugEBMMoBATDSAQEw2gEBMOIBATDqARQwLjAzMTYyMzQ2NDQ4MTc3MzY1NvIBHTMxNjIzNDY0NDguMTc3MzY1NjU0NjUxNDY5OTYx+gEUMC4wMzE2MjM0NjQ0ODE3NzM2NTaCAgEw"
+---
+# Smart contract needs whitelisting as a bond provider
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+memo: "bond:{{ addr_thor_dog }}:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:0"
+gas: 100000
+coins:
+  - amount: "1000000"
+    asset: "rune"
+---
+type: create-blocks
+count: 1
+---
+# Execute a Bond msg via MsgDeposit routed through the smart contract
+# memo: bond:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/types.MsgDeposit",
+        "value": "CiMKEgoEVEhPUhIEUlVORRoEUlVORRINMjUwMDAwMDAwMDAwMBIxYm9uZDp0dGhvcjF6ZjNnc2s3ZWR6d2w5c3l5ZWZ2ZmhsZTM3Y2p0cWwzNWg2azg1bRogreSl9YA6Q5g1xjY5Wo1kje5XsvyQ2Y3Bf6iHFZtpY4s=",
+      },
+  }
+funds:
+  - amount: "2500000000000"
+    denom: "rune"
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[3].type == "message"
+  - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
+  # 2.5m RUNE sent to the contract
+  - .txs[0].result.events[4].type == "coin_spent"
+  - .txs[0].result.events[4].amount == "2500000000000rune"
+  - .txs[0].result.events[4].spender == "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+  - .txs[0].result.events[5].type == "coin_received"
+  - .txs[0].result.events[5].amount == "2500000000000rune"
+  - .txs[0].result.events[5].receiver == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[6].type == "transfer"
+  # Contract executed, dispatched MsgDeposit as a sub message
+  - .txs[0].result.events[7].type == "execute"
+  - .txs[0].result.events[7]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  # Funds forwarded to Node
+  - .txs[0].result.events[8].type == "coin_spent"
+  - .txs[0].result.events[8].amount == "2500000000000rune"
+  - .txs[0].result.events[8].spender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[9].type == "coin_received"
+  - .txs[0].result.events[9].amount == "2500000000000rune"
+  - .txs[0].result.events[9].receiver == "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff"
+  - .txs[0].result.events[10].type == "transfer"
+  # Bond executed on behalf of the smart contract
+  - .txs[0].result.events[11].type == "bond"
+  - .txs[0].result.events[11].amount == "2500000000000"
+  - .txs[0].result.events[11].bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[11].from == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[11].memo == "bond:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+  - .txs[0].result.events[11].node_address == "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers[1].bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .bond_providers.providers[1].bond == "2500000000000"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/auth/v1beta1/module_accounts/bond
+asserts:
+  - .account.base_account.address == "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff"
+---
+type: create-blocks
+count: 1
+---
+# Check that the subMsgs can't sent to blocked module accounts
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/cosmos.bank.v1beta1.MsgSend",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEix0dGhvcjE3Z3c3NWF4Y25yODc0N3BrYW55ZTQ1cG5yd2s3cDljM3VoemdmZhoRCgRydW5lEgkxMDAwMDAwMDA=",
+      },
+  }
+funds:
+  - amount: "10000000"
+    denom: "rune"
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.log|match("cannot use MsgSend for Module transactions, use MsgDeposit instead")
+---
+# Disable permissionless and ensure a contract can instantiate
+type: tx-mimir
+key: WasmPermissionless
+value: -1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/cosmwasm.wasm.v1.MsgInstantiateContract",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmGAEiBHRlc3QqAnt9",
+      },
+  }
+funds: []
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[5].type == "instantiate"
+  - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
+  - .txs[0].result.events[5].code_id == "1"
+---
+type: check
+endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/1/contracts
+asserts:
+  - .contracts|length == 2

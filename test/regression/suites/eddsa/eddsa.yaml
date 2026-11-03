@@ -1,0 +1,77 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-sol-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - map(select(.status == "ActiveVault") | .chains | index("SOL"))
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:SOL.SOL:{{ addr_sol_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .[0].vault_pub_key_eddsa == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
+  - .[0].to_address == "{{ addr_sol_cat }}"
+  - .[0].coin.asset == "SOL.SOL"
+  - .[0].coin.amount == "997497"
+  - .[0].max_gas[0].asset == "SOL.SOL"
+  - .[0].max_gas[0].amount == "500" # 5000 lamports = 0.0000005 SOL = 500 in THORChain 1e8 accounting units
+  - .[0].max_gas[0].decimals == 9
+---
+########################################################################################
+# quote and swap sol to btc
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: SOL.SOL
+  to_asset: BTC.BTC
+  amount: 10000000
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .expected_amount_out|tonumber == 956231
+  - .memo == "=:b:{{ addr_btc_fox }}"
+  - .recommended_min_amount_in == "301500"
+  - .fees.liquidity == "19479"
+  - .fees.outbound == "7000"
+  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
+  - .fees.slippage_bps == 198
+  - .fees.total_bps == 267
+---
+########################################################################################
+# quote and swap btc to sol
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC.BTC
+  to_asset: SOL.SOL
+  amount: 1000000
+  destination: {{ addr_sol_fox }}
+asserts:
+  - .expected_amount_out|tonumber == 9593961
+  - .memo == "=:o:{{ addr_sol_fox }}"
+  - .recommended_min_amount_in == "30210"
+  - .fees.liquidity == "193632"
+  - .fees.outbound == "500"
+  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
+  - .fees.slippage_bps == 197
+  - .fees.total_bps == 198

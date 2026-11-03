@@ -1,0 +1,49 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# ensure scheduled height is unset
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .SCHEDULEDMIGRATION|not
+---
+########################################################################################
+# set scheduled migration height
+########################################################################################
+type: tx-mimir
+key: ScheduledMigration
+value: 4
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .SCHEDULEDMIGRATION == 4
+---
+########################################################################################
+# fake mocknet migration sets a dummy key - ensure it has not yet triggered
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# verify the mocknet migration
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .|length == 2
+  - ."SCHEDULED-MIGRATION-MOCKNET" == 123

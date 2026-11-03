@@ -1,0 +1,99 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# interior-round keysign failure — sole vault member reports, consensus is immediate,
+# the tss_keysign_failure event must carry round and blame granularity
+########################################################################################
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+pub_key: {{ pubkey_dog }}
+height: 1
+coins:
+  - asset: "BTC.BTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "SignRound1Message1"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "SignRound1Message1"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.reason == "fail to keysign"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.pubkey == "{{ pubkey_dog }}"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.blame == "{{ pubkey_dog }}"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.height == "1"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.id == "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+---
+########################################################################################
+# an interior-round failure must not freeze the vault
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .frozen == null or (.frozen|length == 0)
+---
+########################################################################################
+# terminal-round keysign failure (tss-lib v3 round 9) — event is emitted with the
+# terminal round name and the vault is frozen for the blamed chain
+########################################################################################
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "f340a66e6cd907decf8ba985e84624458b4e0b5b4458bd0bc43d15bcd4fda284"
+pub_key: {{ pubkey_dog }}
+height: 1
+coins:
+  - asset: "BTC.BTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "SignRound9Message"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "SignRound9Message"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.pubkey == "{{ pubkey_dog }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .frozen|length == 1
+  - .frozen[0] == "BTC"

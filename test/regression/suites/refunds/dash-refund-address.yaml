@@ -1,0 +1,80 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# A valid regtest refund address is honored.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DASH
+      from_address: {{ addr_dash_fox }}
+      to_address: {{ addr_dash_dog }}
+      coins:
+        - amount: "100000000"
+          asset: DASH.DASH
+          decimals: 8
+      gas:
+        - amount: "4000"
+          asset: DASH.DASH
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}/{{ addr_dash_cat }}:100000000000"
+    block_height: 100
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - '[.[] | select(.in_hash == "{{ observe_txid 1 }}")] | length == 1'
+  - '[.[] | select(.in_hash == "{{ observe_txid 1 }}")][0] | .chain == "DASH" and .coin.asset == "DASH.DASH" and .to_address == "{{ addr_dash_cat }}"'
+  - '[.[] | select(.in_hash == "{{ observe_txid 1 }}")][0].coin.amount | tonumber > 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.. | objects | select(.type? == "refund" and .id? == "{{ observe_txid 1 }}")] | length == 1'
+  - '[.. | objects | select(.type? == "refund" and .id? == "{{ observe_txid 1 }}")][0].coin | contains("DASH.DASH")'
+---
+# A mainnet refund address falls back to the original sender on mocknet.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: DASH
+      from_address: {{ addr_dash_fox }}
+      to_address: {{ addr_dash_dog }}
+      coins:
+        - amount: "100000000"
+          asset: DASH.DASH
+          decimals: 8
+      gas:
+        - amount: "4000"
+          asset: DASH.DASH
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}/XpANHDZNTgEyM2FN8QjERafkRaK4X8Uaeq:100000000000"
+    block_height: 100
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - '[.[] | select(.in_hash == "{{ observe_txid 2 }}")] | length == 1'
+  - '[.[] | select(.in_hash == "{{ observe_txid 2 }}")][0] | .chain == "DASH" and .coin.asset == "DASH.DASH" and .to_address == "{{ addr_dash_fox }}"'
+  - '[.[] | select(.in_hash == "{{ observe_txid 2 }}")][0].coin.amount | tonumber > 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.. | objects | select(.type? == "refund" and .id? == "{{ observe_txid 2 }}")] | length == 1'
+  - '[.. | objects | select(.type? == "refund" and .id? == "{{ observe_txid 2 }}")][0].coin | contains("DASH.DASH")'

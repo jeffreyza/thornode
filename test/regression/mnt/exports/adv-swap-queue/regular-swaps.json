@@ -1,0 +1,502 @@
+{
+  "app_hash": null,
+  "app_name": "thornode",
+  "app_state": {
+    "auth": {
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "10",
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "pub_key": null,
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "6",
+          "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
+          },
+          "sequence": "19"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "0",
+            "address": "tthor1yl6hdjhmkf37639730gffanpzndzdpmhv07zme",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "transfer",
+          "permissions": [
+            "minter",
+            "burner"
+          ]
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "1",
+            "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "asgard",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "2",
+            "address": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "thorchain",
+          "permissions": [
+            "minter",
+            "burner"
+          ]
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "3",
+            "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "reserve",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "8",
+          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "Aw/2MBvAhnLEifCInxlpTjCXxV0I/nE8pI5jNI+Zblx6"
+          },
+          "sequence": "2"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "7",
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "pub_key": null,
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "4",
+            "address": "tthor17xpfvakm2amg962yls6f84z3kell8c5ljftt88",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "fee_collector",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "5",
+            "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "bond",
+          "permissions": []
+        }
+      ],
+      "params": {
+        "max_memo_characters": "256",
+        "sig_verify_cost_ed25519": "590",
+        "sig_verify_cost_secp256k1": "1000",
+        "tx_sig_limit": "7",
+        "tx_size_cost_per_byte": "10"
+      }
+    },
+    "bank": {
+      "balances": [
+        {
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "coins": [
+            {
+              "amount": "393795220",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "coins": [
+            {
+              "amount": "5000000000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+          "coins": [
+            {
+              "amount": "207692960447",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+          "coins": [
+            {
+              "amount": "34999825311860",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "coins": [
+            {
+              "amount": "2491778587395",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "coins": [
+            {
+              "amount": "2500103929845",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+          "coins": [
+            {
+              "amount": "5000205415233",
+              "denom": "rune"
+            }
+          ]
+        }
+      ],
+      "denom_metadata": [],
+      "params": {
+        "default_send_enabled": false,
+        "send_enabled": []
+      },
+      "send_enabled": [],
+      "supply": [
+        {
+          "amount": "50200000000000",
+          "denom": "rune"
+        }
+      ]
+    },
+    "denom": {
+      "admins": []
+    },
+    "genutil": {
+      "gen_txs": []
+    },
+    "scheduler": {
+      "schedules": []
+    },
+    "thorchain": {
+      "POL": {
+        "rune_deposited": "0",
+        "rune_withdrawn": "0"
+      },
+      "THORNames": [],
+      "adv_swap_queue_items": [],
+      "affiliate_collectors": null,
+      "bond_providers": [
+        {
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "node_operator_fee": "0",
+          "providers": []
+        }
+      ],
+      "chain_contracts": [],
+      "dynamic_fee_accumulators": [],
+      "dynamic_fee_records": [],
+      "last_chain_heights": [
+        {
+          "chain": "BTC",
+          "height": "8"
+        },
+        {
+          "chain": "ETH",
+          "height": "8"
+        }
+      ],
+      "last_signed_height": "20",
+      "liquidity_providers": [
+        {
+          "asset": "BTC.BTC",
+          "asset_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
+          "asset_deposit_value": "100000000",
+          "last_add_height": "1",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "rune_deposit_value": "100000000000",
+          "units": "100000000000"
+        },
+        {
+          "asset": "ETH.ETH",
+          "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "asset_deposit_value": "1000000000",
+          "last_add_height": "1",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "rune_deposit_value": "100000000000",
+          "units": "100000000000"
+        }
+      ],
+      "mimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE",
+          "value": "1"
+        }
+      ],
+      "network": {
+        "LPIncomeSplit": "9585",
+        "NodeIncomeSplit": "415",
+        "bond_reward_rune": "207415233",
+        "total_bond_units": "21"
+      },
+      "network_fees": [
+        {
+          "chain": "BTC",
+          "transaction_fee_rate": "7",
+          "transaction_size": "1000"
+        },
+        {
+          "chain": "ETH",
+          "transaction_fee_rate": "80",
+          "transaction_size": "80000"
+        }
+      ],
+      "nodeMimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "1"
+        }
+      ],
+      "node_accounts": [
+        {
+          "active_block_height": "1",
+          "bond": "4999998000000",
+          "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "ip_address": "1.1.1.1",
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "pub_key_set": {
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
+            "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+          },
+          "status": "Active",
+          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
+        }
+      ],
+      "observed_tx_in_voters": null,
+      "observed_tx_out_voters": null,
+      "outbound_fee_spent_rune": [
+        {
+          "amount": "56469658",
+          "asset": "BTC.BTC"
+        },
+        {
+          "amount": "415419843",
+          "asset": "ETH.ETH"
+        }
+      ],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "689692709022",
+          "asset": "BTC.BTC"
+        },
+        {
+          "amount": "689932144006",
+          "asset": "ETH.ETH"
+        }
+      ],
+      "pools": [
+        {
+          "LP_units": "100000000000",
+          "asset": "BTC.BTC",
+          "balance_asset": "98665985",
+          "balance_rune": "104194108829",
+          "decimals": "8",
+          "pending_inbound_asset": "0",
+          "pending_inbound_rune": "0",
+          "status": "Available",
+          "synth_units": "0"
+        },
+        {
+          "LP_units": "100000000000",
+          "asset": "ETH.ETH",
+          "balance_asset": "985470262",
+          "balance_rune": "103498851618",
+          "decimals": "8",
+          "pending_inbound_asset": "0",
+          "pending_inbound_rune": "0",
+          "status": "Available",
+          "synth_units": "0"
+        }
+      ],
+      "reference_memos": [],
+      "reserve_contributors": null,
+      "rune_pool": {
+        "pool_units": "0",
+        "reserve_units": "0",
+        "rune_deposited": "0",
+        "rune_withdrawn": "0"
+      },
+      "rune_providers": [],
+      "secured_assets": [],
+      "sol_vault_nonces": [],
+      "streaming_swaps": [],
+      "swap_queue_items": [],
+      "swapper_clout": [
+        {
+          "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+          "reclaimed": "0",
+          "score": "1864324873",
+          "spent": "0"
+        },
+        {
+          "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
+          "reclaimed": "0",
+          "score": "2390557411",
+          "spent": "0"
+        },
+        {
+          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "reclaimed": "0",
+          "score": "786045171",
+          "spent": "0"
+        },
+        {
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "reclaimed": "0",
+          "score": "377543",
+          "spent": "0"
+        },
+        {
+          "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "reclaimed": "0",
+          "score": "51891",
+          "spent": "0"
+        }
+      ],
+      "tcy_claimers": [],
+      "tcy_stakers": [],
+      "trade_accounts": [],
+      "trade_units": [],
+      "tx_outs": null,
+      "vaults": [
+        {
+          "block_height": "2",
+          "chains": [
+            "THOR",
+            "BTC",
+            "LTC",
+            "BCH",
+            "ETH",
+            "DOGE",
+            "AVAX",
+            "GAIA"
+          ],
+          "coins": [
+            {
+              "amount": "98665985",
+              "asset": "BTC.BTC",
+              "decimals": "8"
+            },
+            {
+              "amount": "985470262",
+              "asset": "ETH.ETH",
+              "decimals": "8"
+            }
+          ],
+          "inbound_tx_count": "11",
+          "membership": [
+            "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+          ],
+          "outbound_tx_count": "9",
+          "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+          "routers": null,
+          "status": "ActiveVault",
+          "type": "AsgardVault"
+        }
+      ]
+    },
+    "upgrade": {},
+    "wasm": {
+      "codes": [],
+      "contracts": [],
+      "params": {
+        "code_upload_access": {
+          "addresses": [],
+          "permission": "Everybody"
+        },
+        "instantiate_default_permission": "Everybody"
+      },
+      "sequences": [
+        {
+          "id_key": "BGxhc3RDb2RlSWQ=",
+          "value": "1"
+        },
+        {
+          "id_key": "BGxhc3RDb250cmFjdElk",
+          "value": "1"
+        }
+      ]
+    }
+  },
+  "chain_id": "thorchain",
+  "consensus": {
+    "params": {
+      "abci": {
+        "vote_extensions_enable_height": "0"
+      },
+      "block": {
+        "max_bytes": "22020096",
+        "max_gas": "-1"
+      },
+      "evidence": {
+        "max_age_duration": "172800000000000",
+        "max_age_num_blocks": "100000",
+        "max_bytes": "1048576"
+      },
+      "validator": {
+        "pub_key_types": [
+          "ed25519"
+        ]
+      },
+      "version": {
+        "app": "0"
+      }
+    }
+  },
+  "initial_height": 22
+}

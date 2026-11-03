@@ -1,0 +1,64 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .rune_price_in_tor == "0"
+  - .tor_price_in_rune == "0"
+  - .tor_price_halted == true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+---
+########################################################################################
+# enable tor anchor
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDX-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 0
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DerivedDepthBasisPts
+value: 10000
+sequence: 1
+---
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DERIVEDDEPTHBASISPTS == 10000
+  - ."TORANCHOR-ETH-USDX-0X9999999999999999999999999999999999999999" == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .rune_price_in_tor == "99998801"
+  - .tor_price_in_rune == "100001199"
+  - .tor_price_halted == false
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HALTETHTRADING
+value: 1
+---
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .rune_price_in_tor == "99997802"
+  - .tor_price_in_rune == "100002198"
+  - .tor_price_halted == true

@@ -1,0 +1,44 @@
+{
+  "skill_name": "handler-development",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to change how the donate handler validates the pool - it should reject donations to pools in Staged status. This changes consensus behaviour, so how do I version-gate it so it only activates after the next upgrade?",
+      "expected_output": "Explains that develop has no version gates in x/thorchain: edit DonateHandler.validate in x/thorchain/handler_donate.go in place; the change activates at the validator-scheduled upgrade height when every node runs the new binary. Points out keeper/factory versions are not usable as feature gates. Adds a gocheck test case and suggests a regression suite.",
+      "files": [],
+      "assertions": [
+        "Edits x/thorchain/handler_donate.go in place rather than adding a new validate function",
+        "Does not introduce a version.GTE / semver.MustParse / GetVersion() comparison to gate the change",
+        "Does not create validateV3_x_0 / handleV3_x_0 style versioned functions or an errBadVersion default branch",
+        "States that consensus-breaking changes activate via the validator-scheduled upgrade (protocol-upgrade), not a code gate",
+        "Mentions running the handler test with -tags mocknet"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a new memo type `PAUSE:<chain>` that lets a node operator's bond address request a chain pause. Walk me through every file I need to touch.",
+      "expected_output": "Treats it as an internal memo-driven msg: proto msg + make proto-gen, types/msg_<name>.go, alias.go re-exports, memo.go TxType + stringToTxTypeMap + predicate lists, memo_<name>.go parser, memo_parser.go case, handler_<name>.go with NewXHandler/Run/validate/handle, getInternalHandlerMapping and processOneTxIn in handler.go, event in type_event.go, unit tests and regression suite. Notes that internal msgs are not registered in codec.go or tx.proto.",
+      "files": [],
+      "assertions": [
+        "Names getInternalHandlerMapping and processOneTxIn in x/thorchain/handler.go",
+        "Names x/thorchain/memo/memo.go TxType / stringToTxTypeMap and memo_parser.go",
+        "Mentions the memo predicates (IsInbound / IsInternal etc.) must be updated",
+        "Does not use a `iota + 100` TxType or reference a nonexistent ante_handlers.go file",
+        "Does not add version-dispatched handler functions"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want a new manager that tracks per-block affiliate fee totals and resets them in EndBlock. How do I add it to the Mgrs container?",
+      "expected_output": "Lists: interface in managers.go, manager_<name>_current.go with newXMgr constructor, Mgrs field + RLock accessor, GetXManager factory that ignores version, build in recreateManagers and assign in the swap block, add to Manager interface and DummyMgr only if handlers need it, EndBlock hook in module.go with care about ordering, gocheck test. Warns EndBlock errors are logged not rolled back and panics halt the chain.",
+      "files": [],
+      "assertions": [
+        "Mentions recreateManagers in x/thorchain/managers.go",
+        "The GetXManager factory ignores the version argument (no version switch)",
+        "Does not use VCUR naming (e.g. newAffiliateMgrVCUR)",
+        "Mentions EndBlock ordering in x/thorchain/module.go is consensus-relevant",
+        "Mentions updating DummyMgr / dummy managers if the Manager interface changes"
+      ]
+    }
+  ]
+}

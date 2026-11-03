@@ -1,0 +1,115 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify vault has XMR chain and FROST pubkey
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
+  - .[]|select((.chains | index("XMR")) != null)|.status == "ActiveVault"
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("THOR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|(.chains | index("XMR")) != null
+  - .[]|select((.chains | index("XMR")) != null)|.pub_key_frost == "{{ pubkey_dog_eddsa }}"
+  - (.[]|select((.chains | index("XMR")) != null)|.vault_creation_height_xmr // 0) == 0
+---
+# Spent refs are kept in a bounded XMR store, not on the vault object.
+type: check
+endpoint: http://localhost:1317/thorchain/xmr/spent_refs/{{ pubkey_dog_eddsa }}
+asserts:
+  - (.spent_output_refs // []) | length == 0
+---
+# Deposit RUNE to swap for XMR (creates outbound in queue)
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:XMR.XMR:{{ addr_xmr_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue has XMR item and capture amount
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "XMR"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].to_address == "{{ addr_xmr_cat }}"
+  - .[0].coin.asset == "XMR.XMR"
+  - .[0].coin.amount | tonumber > 0
+---
+# Observe the outbound with spent output refs
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: {{ addr_xmr_dog }}
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "99500000"
+          asset: "XMR.XMR"
+          decimals: 8
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "OUT:{{ native_txid 1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+    xmr_tx_key: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    spent_output_refs:
+      - tx_hash: "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+        output_index: 0
+        key_image: "1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa"
+        spend_tx_hash: '{{ observe_txid 1 }}'
+      - tx_hash: "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
+        output_index: 1
+        key_image: "2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb"
+        spend_tx_hash: '{{ observe_txid 1 }}'
+---
+type: create-blocks
+count: 1
+---
+# Verify observed tx is done and has spent refs
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.tx.chain == "XMR"
+  - .observed_tx.xmr_tx_key == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  - .observed_tx.spent_output_refs | length == 2
+  - .observed_tx.spent_output_refs[0].tx_hash == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+  - .observed_tx.spent_output_refs[0].key_image == "1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa"
+  - .observed_tx.spent_output_refs[0].spend_tx_hash == "{{ observe_txid 1 }}"
+  - .observed_tx.spent_output_refs[1].tx_hash == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
+  - .observed_tx.spent_output_refs[1].key_image == "2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb"
+  - .observed_tx.spent_output_refs[1].spend_tx_hash == "{{ observe_txid 1 }}"
+---
+# Verify spent output refs accumulated in the XMR spent-ref store
+type: check
+endpoint: http://localhost:1317/thorchain/xmr/spent_refs/{{ pubkey_dog_eddsa }}
+asserts:
+  - (.spent_output_refs // []) | length == 2
+  - (.spent_output_refs[0].tx_hash) == "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+  - ((.spent_output_refs[0].output_index) // 0) == 0
+  - (.spent_output_refs[0].key_image) == "1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa"
+  - (.spent_output_refs[0].spend_tx_hash) == "{{ observe_txid 1 }}"
+  - (.spent_output_refs[1].tx_hash) == "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
+  - (.spent_output_refs[1].output_index) == 1
+  - (.spent_output_refs[1].key_image) == "2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb"
+  - (.spent_output_refs[1].spend_tx_hash) == "{{ observe_txid 1 }}"

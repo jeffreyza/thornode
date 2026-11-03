@@ -1,0 +1,275 @@
+########################################################################################
+## XMR refunds. The observed XMR sender is an "xmrunknown1..." marker, so a refund can
+## only go to an explicit address: the swap memo's refund address, or for ADD the
+## registered/memo asset address. Without one the coin cannot be refunded.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-split-vault-pool-state.yaml" }}
+---
+# a retired XMR monovault (fox FROST key) that still receives a late inbound
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - XMR
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_fox }}
+          pub_key_eddsa: {{ pubkey_fox_eddsa }}
+          pub_key_frost: {{ pubkey_fox_eddsa }}
+          status: InactiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
+  - .[]|select((.chains | index("XMR")) != null)|.pub_key == "{{ pubkey_dog }}"
+---
+########################################################################################
+# Quote API: XMR as the source chain requires a supported explicit refund address
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: XMR.XMR
+  to_asset: BTC.BTC
+  amount: 10000000000
+  destination: {{ addr_btc_fox }}
+status: 400
+asserts:
+  - .message|contains("refund address is required for source chain XMR")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: XMR.XMR
+  to_asset: BTC.BTC
+  amount: 10000000000
+  destination: {{ addr_btc_fox }}
+  # integrated address (network byte 0x13, embedded payment id)
+  refund_address: 4CdvgtrwKjggnkXTAXRu7peYZruMJNii9EHrneXZie344btcwjvbzMbDvRcXvC4h4667vpwhdQWwPivq8ZfVPsGJeEvzNowpChm17H3MqL
+status: 400
+asserts:
+  - .message|contains("uses an unsupported XMR address form")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: XMR.XMR
+  to_asset: BTC.BTC
+  amount: 10000000000
+  destination: {{ addr_btc_fox }}
+  refund_address: {{ addr_xmr_fox }}
+asserts:
+  - .expected_amount_out|tonumber > 0
+  - .inbound_address == "{{ addr_xmr_dog }}"
+  - .memo|contains("{{ addr_btc_fox }}/{{ addr_xmr_fox }}")
+---
+########################################################################################
+# Failed swap (price limit) refunds to the memo's explicit refund address
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:BTC.BTC:{{ addr_btc_fox }}/{{ addr_xmr_fox }}:100000000"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "XMR"
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+  - .[0].original_memo == "REFUND:{{ observe_txid 1 }}"
+  - .[0].to_address == "{{ addr_xmr_fox }}"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.asset == "XMR.XMR"
+  - .[0].coin.amount == "${REFUND_1=9999995000}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 2 }}'
+      chain: XMR
+      from_address: {{ addr_xmr_dog }}
+      to_address: {{ addr_xmr_fox }}
+      coins:
+        - amount: "${REFUND_1}"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 11
+    xmr_mined_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+    xmr_tx_key: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 2 }}
+asserts:
+  - .observed_tx.xmr_tx_key == "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+---
+########################################################################################
+# Invalid memo, unknown sender, no refund address: nothing can be refunded, so no
+# outbound is scheduled and the coin stays with the pool
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1000000000000"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 3 }}'
+      chain: XMR
+      from_address: xmrunknown1yqtan6smc3du0l4h52y9ufjs04t2tsvwx80v75
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "not a valid memo"
+    block_height: 12
+    xmr_mined_height: 12
+    finalise_height: 12
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/status/{{ observe_txid 3 }}
+asserts:
+  - .stages.inbound_observed.completed == true
+  - .out_txs == null
+  - .planned_out_txs == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  # the unrefundable coin is donated to the pool
+  - .balance_asset == "1010000000000"
+---
+########################################################################################
+# Late inbound to the inactive XMR vault using a memoless ADD reference: the refund
+# goes to the registered ADD asset address (not the unknown sender) and is paid from
+# the active XMR monovault
+########################################################################################
+type: tx-mimir
+key: MemolessTxnTTL
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "reference:XMR.XMR:+:XMR.XMR:{{ addr_thor_pig }}/{{ addr_xmr_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/XMR.XMR/00001
+asserts:
+  - .memo == "+:XMR.XMR:{{ addr_thor_pig }}/{{ addr_xmr_pig }}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 4 }}'
+      chain: XMR
+      from_address: xmrunknown1y3mty60nyg4h3p875yzuwfapypxmw5pvhfezdx
+      to_address: {{ addr_xmr_fox }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "r:00001"
+    block_height: 13
+    xmr_mined_height: 13
+    finalise_height: 13
+    observed_pub_key: {{ pubkey_fox_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "XMR"
+  - .[0].in_hash == "{{ observe_txid 4 }}"
+  - .[0].original_memo == "REFUND:{{ observe_txid 4 }}"
+  - .[0].to_address == "{{ addr_xmr_pig }}"
+  - .[0].coin.asset == "XMR.XMR"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_pig }}
+asserts:
+  # the refunded add left no LP position or staged asset behind
+  - .units == "0"
+  - .pending_asset == "0"
+  - .asset_address == null

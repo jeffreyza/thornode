@@ -1,0 +1,94 @@
+{
+  "app_state": {
+    "authority": {
+      "owner": "noble1f4l5dlqhaujgkxxqmug4stfvmvt58vx2pru9pu",
+      "pending_owner": ""
+    },
+    "bank": {
+      "denom_metadata": [
+        {
+          "description": "The permissioned staking asset for Noble Chain",
+          "denom_units": [
+            {
+              "denom": "ustake",
+              "exponent": 0,
+              "aliases": ["microstake"]
+            },
+            {
+              "denom": "stake",
+              "exponent": 6,
+              "aliases": []
+            }
+          ],
+          "base": "ustake",
+          "display": "stake",
+          "name": "stake",
+          "symbol": "STAKE"
+        },
+        {
+          "description": "Frienzies are an IBC token redeemable exclusively for a physical asset issued by the Noble entity.",
+          "denom_units": [
+            {
+              "denom": "ufrienzies",
+              "exponent": 0,
+              "aliases": ["microfrienzies"]
+            },
+            {
+              "denom": "mfrienzies",
+              "exponent": 3,
+              "aliases": ["millifrienzies"]
+            },
+            {
+              "denom": "frienzies",
+              "exponent": 6,
+              "aliases": []
+            }
+          ],
+          "base": "ufrienzies",
+          "display": "ufrienzies",
+          "name": "frienzies",
+          "symbol": "FRNZ"
+        }
+      ]
+    },
+    "fiat-tokenfactory": {
+      "blacklistedList": [],
+      "paused": {
+        "paused": false
+      },
+      "masterMinter": {
+        "address": "noble1hnyy4gp5tgarpg3xu6w5cw4zsyphx2lygefjh2"
+      },
+      "mintersList": [],
+      "pauser": null,
+      "blacklister": null,
+      "owner": {
+        "address": "noble1f4l5dlqhaujgkxxqmug4stfvmvt58vx2pru9pu"
+      },
+      "minterControllerList": [],
+      "mintingDenom": {
+        "denom": "ufrienzies"
+      }
+    },
+    "tokenfactory": {
+      "params": {},
+      "blacklistedList": [],
+      "paused": {
+        "paused": false
+      },
+      "masterMinter": {
+        "address": "noble1hnyy4gp5tgarpg3xu6w5cw4zsyphx2lygefjh2"
+      },
+      "mintersList": [],
+      "pauser": null,
+      "blacklister": null,
+      "owner": {
+        "address": "noble1f4l5dlqhaujgkxxqmug4stfvmvt58vx2pru9pu"
+      },
+      "minterControllerList": [],
+      "mintingDenom": {
+        "denom": "ufrienzies"
+      }
+    }
+  }
+}

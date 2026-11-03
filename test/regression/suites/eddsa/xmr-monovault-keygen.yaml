@@ -1,0 +1,118 @@
+########################################################################################
+## Dedicated XMR monovault bootstrap from a fresh single-node genesis:
+## - genesis creates the regular asgard and schedules the XMR FROST keygen 128 blocks
+##   later (so bifrost's THOR scanner is live before it runs)
+## - a keygen result reported before its keygen block height is rejected
+## - a successful XMR keygen (FROST pubkey + observed Monero height) creates an XMR-only
+##   vault, activates it, and exposes its XMR inbound address
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].pub_key == "{{ pubkey_dog }}"
+  - (.[0].chains | index("XMR")) == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "XMR")]|length == 0'
+---
+########################################################################################
+# reporting the keygen before block 129 is rejected ("invalid keygen block")
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: XMRMonovaultKeygen
+height: 129
+pool_pub_key: {{ pubkey_cat }}
+pool_pub_key_frost: {{ pubkey_fox_eddsa }}
+observed_monero_height: 3100000
+pub_keys:
+  - {{ pubkey_dog }}
+chains:
+  - THOR
+  - XMR
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - (.[0].chains | index("XMR")) == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_cat }}
+status: 400
+asserts:
+  - .message|contains("vault not found")
+---
+type: create-blocks
+count: 127
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 129
+---
+# the genesis-scheduled XMR keygen lands at 1 + 128
+type: check
+endpoint: http://localhost:1317/thorchain/keygen/129/{{ pubkey_dog }}
+asserts:
+  - .keygen_block.height == 129
+  - .keygen_block.keygens|length == 1
+  - .keygen_block.keygens[0].type == "XMRMonovaultKeygen"
+  - .keygen_block.keygens[0].members == ["{{ pubkey_dog }}"]
+---
+########################################################################################
+# successful XMR monovault keygen at its scheduled height
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: XMRMonovaultKeygen
+height: 129
+pool_pub_key: {{ pubkey_cat }}
+pool_pub_key_frost: {{ pubkey_fox_eddsa }}
+observed_monero_height: 3100000
+pub_keys:
+  - {{ pubkey_dog }}
+chains:
+  - THOR
+  - XMR
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_cat }}
+asserts:
+  - .status == "ActiveVault"
+  - .type == "AsgardVault"
+  - .membership == ["{{ pubkey_dog }}"]
+  - .chains|index("XMR") != null
+  - .chains|index("BTC") == null
+  - .pub_key_frost == "{{ pubkey_fox_eddsa }}"
+  - (.pub_key_eddsa // "") == ""
+  - .vault_creation_height_xmr == 3100000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  # the regular asgard keeps serving every other chain
+  - .status == "ActiveVault"
+  - (.chains | index("XMR")) == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "XMR")]|length == 1'
+  - .[]|select(.chain == "XMR")|.address == "{{ addr_xmr_fox }}"
+  - .[]|select(.chain == "XMR")|.pub_key == "{{ pubkey_fox_eddsa }}"
+  - .[]|select(.chain == "BTC")|.address == "{{ addr_btc_dog }}"

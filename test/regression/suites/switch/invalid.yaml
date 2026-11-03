@@ -1,0 +1,82 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableSwitch-GAIA-KUJI
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: GAIA
+      from_address: {{ addr_gaia_fox }}
+      to_address: {{ addr_gaia_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "GAIA.KUJI"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "GAIA.ATOM"
+      memo: "+:GAIA.KUJI:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_gaia_fox }}"
+  - .txs[]|.result.events[]|select(.type=="refund")|.reason|match("asset is a switch asset")
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: GAIA
+      from_address: {{ addr_gaia_fox }}
+      to_address: {{ addr_gaia_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "GAIA.FUZN"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "GAIA.ATOM"
+      memo: "switch:{{ addr_thor_fox }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_gaia_fox }}"
+  - .txs[]|.result.events[]|select(.type=="refund")|.reason|match("GAIA.FUZN switching is not enabled")
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1

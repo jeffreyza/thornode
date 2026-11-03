@@ -1,0 +1,75 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state-multiple-vaults.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# swap below dust threshold
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "4000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# should not leave anything in queues
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# outbound with 2 outputs, 1 below dust threshold
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:BTC.BTC:4999"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# all outbound items should have over dust
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  # ${DROPPED=7000} is the amount from the "dropping gas asset output below dust threshold" log
+  - .[0]|.coin.amount|tonumber == 49990000-${DROPPED}
+---
+########################################################################################
+# vault will have more than pool
+########################################################################################
+type: fail-export-invariants

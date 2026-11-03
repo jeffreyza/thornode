@@ -1,0 +1,62 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+message QueryStableReserveRequest { string height = 1; }
+
+message QueryStableReserveInventory {
+  string asset = 1 [ (gogoproto.jsontag) = "asset" ];
+  string amount = 2 [ (gogoproto.jsontag) = "amount" ];
+  bool healthy = 3 [ (gogoproto.jsontag) = "healthy" ];
+  string reason = 4 [ (gogoproto.jsontag) = "reason" ];
+  string oracle_price = 5 [ (gogoproto.jsontag) = "oracle_price" ];
+}
+
+message QueryStableReserveStreamingSwap {
+  string tx_id = 1 [ (gogoproto.jsontag) = "tx_id" ];
+  string memo = 2 [ (gogoproto.jsontag) = "memo" ];
+  string purpose = 3 [ (gogoproto.jsontag) = "purpose" ];
+  string source_asset = 4 [ (gogoproto.jsontag) = "source_asset" ];
+  string target_asset = 5 [ (gogoproto.jsontag) = "target_asset" ];
+  string amount = 6 [ (gogoproto.jsontag) = "amount" ];
+  uint64 stream_quantity = 7 [ (gogoproto.jsontag) = "stream_quantity" ];
+  uint64 stream_interval = 8 [ (gogoproto.jsontag) = "stream_interval" ];
+}
+
+message QueryStableReserveResponse {
+  bool enabled = 1 [ (gogoproto.jsontag) = "enabled" ];
+  string rune_balance = 2 [ (gogoproto.jsontag) = "rune_balance" ];
+  string depeg_tolerance_bps = 3
+      [ (gogoproto.jsontag) = "depeg_tolerance_bps" ];
+  string pol_share_bps = 4 [ (gogoproto.jsontag) = "pol_share_bps" ];
+  repeated QueryStableReserveInventory inventory = 5
+      [ (gogoproto.jsontag) = "inventory" ];
+  // Field 6 (max_deployment_rune) was removed: the deployment cap no longer
+  // exists, so it was never populated. Reserved so the number/name is not
+  // reused.
+  reserved 6;
+  reserved "max_deployment_rune";
+  string deployment_stream_quantity = 7
+      [ (gogoproto.jsontag) = "deployment_stream_quantity" ];
+  string deployment_stream_interval = 8
+      [ (gogoproto.jsontag) = "deployment_stream_interval" ];
+  repeated QueryStableReserveStreamingSwap active_swaps = 9
+      [ (gogoproto.jsontag) = "active_swaps" ];
+}
+
+message QueryStableReserveContributorRequest {
+  string asset = 1;
+  string address = 2;
+  string height = 3;
+}
+
+message QueryStableReserveContributorResponse {
+  string asset = 1 [ (gogoproto.jsontag) = "asset" ];
+  string address = 2 [ (gogoproto.jsontag) = "address" ];
+  string credit = 3 [ (gogoproto.jsontag) = "credit" ];
+}

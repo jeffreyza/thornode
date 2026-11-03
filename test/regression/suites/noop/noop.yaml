@@ -1,0 +1,187 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check initial vault and pool balances (100000000 BTC from btc-pool-state)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 100000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc
+asserts:
+  - .balance_asset|tonumber == 100000000
+---
+########################################################################################
+# Authorize noop:novault on BTC via the chain-scoped mimir gate (a coordinated,
+# operator-opened window for legitimate insolvency corrections).
+########################################################################################
+type: tx-mimir
+key: "AllowNoVault-BTC"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe an authorized noop:novault inbound - should NOT change vault, pool, or create outbounds
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "noop:novault"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify vault balance is unchanged after authorized noop:novault
+# The AddFunds from observation is reversed by SubFunds in the noop handler
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 100000000
+---
+########################################################################################
+# Close the mimir gate, then observe an UNAUTHORIZED noop:novault. The debit must be
+# skipped and the observation credit left in place (attack-neutralized: funds stay
+# tracked, so physical and tracked balances cannot diverge).
+########################################################################################
+type: tx-mimir
+key: "AllowNoVault-BTC"
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "7000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "noop:novault"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify vault balance INCREASED by the credited amount (unauthorized novault behaves
+# as a plain noop / donation).
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 107000000
+---
+########################################################################################
+# Verify pool balance is unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc
+asserts:
+  - .balance_asset|tonumber == 100000000
+---
+########################################################################################
+# Verify no outbounds created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify the noop:novault transaction was observed
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.tx.memo == "noop:novault"
+---
+########################################################################################
+# Observe a noop - should only change vault balance
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "3000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "noop"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify vault balance is updated
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 110000000
+---
+########################################################################################
+# Verify pool balance is still unchanged
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc
+asserts:
+  - .balance_asset|tonumber == 100000000
+---
+########################################################################################
+# Verify no outbounds created from the noop
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: fail-export-invariants

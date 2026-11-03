@@ -1,0 +1,128 @@
+########################################################################################
+# Limit Swap with Custom TTL (Interval) Larger than StreamingSwapMaxLength
+#
+# This test validates that limit swaps with a custom TTL exceeding StreamingSwapMaxLength
+# still execute correctly. Previously, getMaxSwapQuantity() used the TTL value (stored in
+# State.Interval) as a divisor for max-length calculation. When TTL > StreamingSwapMaxLength,
+# integer division produced 0, setting State.Quantity to 0 and causing every swap attempt
+# to fail with "amount cannot be zero".
+########################################################################################
+
+# Set minimum slip basis points for testing
+type: env
+key: L1_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable advanced swap queue
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+# Set StreamingSwapMaxLength to 100 so we can use a TTL larger than it
+type: tx-mimir
+key: StreamingSwapMaxLength
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Submit a limit swap with custom TTL=200 (larger than StreamingSwapMaxLength=100)
+# Memo format: =<:ASSET:DEST:target/ttl/quantity
+# Target of 4000000 is easily achievable (expected output ~44M)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXID_1={{ observe_txid 1 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=<:ETH.ETH:{{ addr_eth_fox }}:4000000/200/0"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify the swap was queued with non-zero quantity (the fix) and has started executing
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+asserts:
+  - .swap.state.quantity > 0 # Must not be zero - this was the bug
+  - .swap.state.deposit == "5000000"
+  - .swap.state.interval == 200
+  - .swap.trade_target == "4000000"
+  - .swap.state.in != "0" # First sub-swap should have executed
+  - .swap.state.out != "0" # Should have output from first sub-swap
+  - .queue_type == "advanced"
+---
+# Create enough blocks for the swap to fully complete
+type: create-blocks
+count: 19
+---
+# Verify outbound was generated (swap completed and settled)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].in_hash == "${TXID_1}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount == "${OUT_AMOUNT=44381063}"
+  - .[0].to_address == "{{ addr_eth_fox }}"
+---
+# Clear the outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${TXOUT_1={{ observe_txid 101 }}}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "80000"
+          asset: "ETH.ETH"
+      memo: "OUT:${TXID_1}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound queue is empty and swap completed
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Final invariant checks
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

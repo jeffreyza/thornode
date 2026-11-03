@@ -1,0 +1,111 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: CloutLimit
+value: ${CLOUT_LIMIT=100} # Low maximum clout for easy comparison.
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Same-Address swap (ETH.ETH to ETH.USDC).
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
+asserts:
+  - .address == "{{ addr_eth_fox }}"
+  - .score == "0"
+  - .reclaimed == .spent
+  - .spent == "0"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "=:ETH.USDC:{{ addr_eth_fox }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="swap")] | length == 2
+  - .|[..|select(.type?=="scheduled_outbound")] | length == 1
+  # Double-swap was successful.
+  - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | add == ${LIQFEES=432032114}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].clout_spent == "${CLOUT_LIMIT}" # Full clout limit spent.
+  - .[0].coin.asset == ${USDC_ASSET="ETH.USDC-0X9999999999999999999999999999999999999999"}
+  - .[0].coin.amount == "${USDC_OUT=4096846500}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
+asserts:
+  - .address == "{{ addr_eth_fox }}"
+  - .score == "${LIQFEES}"
+  - (.reclaimed|tonumber) < (.spent|tonumber)
+  - .reclaimed == "0"
+  - .spent == "${CLOUT_LIMIT}"
+  # All is in order.
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "${USDC_OUT}"
+        asset: ${USDC_ASSET}
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
+asserts:
+  - .address == "{{ addr_eth_fox }}"
+  - .score == "${LIQFEES}"
+  - .reclaimed == .spent
+  - .spent == "${CLOUT_LIMIT}"
+  # All is in order.

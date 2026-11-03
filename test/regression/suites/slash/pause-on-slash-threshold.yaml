@@ -1,0 +1,118 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Set PauseOnSlashThreshold to a low value so the gas slash will exceed it
+# Setting it to 100 RUNE (10000000000) to make it easy to trigger
+########################################################################################
+type: tx-mimir
+key: PauseOnSlashThreshold
+value: 10000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/PAUSEONSLASHTHRESHOLD
+asserts:
+  - . == 10000000000
+---
+########################################################################################
+# Create a swap to ETH token that will generate an outbound
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET=ETH.USDX-0X9999999999999999999999999999999999999999}:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0]|.coin.amount|tonumber > 11000000000
+---
+########################################################################################
+# Observe outbound with extremely high gas (over MaxETHGas)
+# This will trigger slashing that exceeds our PauseOnSlashThreshold
+# With high enough gas in RUNE terms, should trigger halt signing and trading
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "11291816100"
+          asset: "${ASSET}"
+          decimals: 8
+      gas:
+        - amount: "50000001"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid 1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# outbound fee should be unchanged (was covered by the slash)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+asserts:
+  - .[0].fee_spent_rune == "0"
+---
+########################################################################################
+# Verify outbound remains in queue (due to excessive gas)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+---
+########################################################################################
+# Verify slashing occurred (slash event)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="slash")]|length >= 1'
+---
+########################################################################################
+# Verify correct halt mimirs are set
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH > 0
+  - .HALTETHTRADING > 0
+  - .HALTSIGNINGETH == .HALTETHTRADING
+  - .HALTETHCHAIN|not
+---
+########################################################################################
+# verify correct vault and pool balances
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-50000001
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset|tonumber == 1000000000-50000001

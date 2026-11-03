@@ -1,0 +1,125 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "9"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_fish }}
+          coins:
+            - denom: btc/btc # For non-RUNE deposit test
+              amount: "100000000"
+            - denom: rune
+              amount: "10000000" # Network fee/s
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2500000000000"
+    asset: "rune"
+memo: "bond:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499998000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .total_bond == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("insufficient funds")
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2499996000000"
+    asset: "rune"
+memo: "bond:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .total_bond == "2499996000000"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "bond:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+# Test non-RUNE bond attempt (a MsgDeposit for a network module which should only receive RUNE).
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result | length == 2
+  - .result[0].denom == ${NON_RUNE_ASSET="btc/btc"}
+  - .result[0].amount == "${NON_RUNE_AMOUNT=100000000}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "${NON_RUNE_AMOUNT}"
+    asset: ${NON_RUNE_ASSET}
+memo: "bond:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.code? and .code != 0)] | length == 1
+  - ..|select(.code? and .code != 0).log| contains("(bond) memos are for the (bond) module, for which messages must only contain RUNE")

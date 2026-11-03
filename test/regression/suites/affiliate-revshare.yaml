@@ -1,0 +1,114 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# register thorname "t" owned by cat
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .aliases[0].address == "{{ addr_thor_cat }}"
+  - .affiliate_collector_rune == "0"
+  - .preferred_asset == "."
+---
+########################################################################################
+# set REVSHARE-t operational mimir to 2500 bps (25%)
+# OperationalVotesMin is 1 on mocknet so dog's single vote is sufficient
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 2500
+---
+########################################################################################
+# swap rune -> BTC with thorname "t" as the first affiliate. The swap records a
+# liquidity fee and the swap fee-attribution hook adds that fee to the per-block
+# accumulator keyed by thorname "t". End-of-block UpdateNetwork then drains the
+# accumulator, sends 2500 bps (25%) of the fee from Reserve to AffiliateCollector
+# (crediting cat's AffiliateCollector entry), and emits a rev_share event.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::t:100"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# assert the rev_share event was emitted with the correct attributes
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  # store layer uppercases all keys (see KVStore.GetKey), so the accumulator
+  # round-trips the thorname as its canonical uppercase form "T".
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").owner == "{{ addr_thor_cat }}"
+  - ..|select(.type?=="rev_share").bps == "2500"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+  # payout is computed by common.GetSafeShare which is round-half-up.
+  - ((..|select(.type?=="rev_share").accrued_fee | tonumber) * 2500 / 10000 | . + 0.5 | floor) == (..|select(.type?=="rev_share").payout | tonumber)
+---
+########################################################################################
+# assert the thorname owner's AffiliateCollector rune increased by the event payout
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - (.affiliate_collector_rune | tonumber) > 0
+---
+########################################################################################
+# confirm REVSHARE-t can be disabled by setting it back to 0. Subsequent swaps
+# still emit rev_share events with accrued_fee attribution (so indexers can
+# track gross attribution), but the payout is zero.
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+asserts:
+  - . == 0

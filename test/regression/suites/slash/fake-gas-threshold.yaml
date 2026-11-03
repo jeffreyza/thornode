@@ -1,0 +1,98 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Set PauseOnSlashThreshold to a low value (100 RUNE = 10000000000)
+# This test verifies that fake gas transactions do NOT trigger slashing or halt
+# mimirs even when gas costs are very high and exceed the threshold
+########################################################################################
+type: tx-mimir
+key: PauseOnSlashThreshold
+value: 10000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/PAUSEONSLASHTHRESHOLD
+asserts:
+  - . == 10000000000
+---
+########################################################################################
+# Observe a fake gas transaction with extremely high gas (200000000 wei)
+# Fake gas tx has:
+# 1. to_address is external (not vault-to-vault like cancel tx)
+# 2. from_address is the vault
+# 3. No memo
+# 4. Amount = 1 (in 8-decimal format)
+# 5. Gas asset (ETH.ETH)
+# 6. Very high gas (200000000) that exceeds PauseOnSlashThreshold in RUNE terms
+# This simulates bifrost sending a fake gas tx to account for gas spent on a failed outbound
+# Expected: NO slashing, NO halt mimirs (fake gas txs are exempt)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }} # external address (not vault-to-vault)
+      coins:
+        - amount: "1" # 1 in 8-decimal format (THORChain representation)
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "200000000" # Very high gas that would trigger threshold if it were slashed
+          asset: "ETH.ETH"
+      memo: "OUT:{{ observe_txid 1 }}" # bifrost creates memo OUT:txhash for failed tx observations
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# verify fake gas was accounted in the outbound fee multiplier
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+asserts:
+  - .[0].fee_spent_rune == "20000319635"
+---
+########################################################################################
+# Verify NO slashing occurred and NO security event was emitted for fake gas tx
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="slash")]|length == 0'
+  - '[.end_block_events[] | select(.type == "security")]|length == 0'
+---
+########################################################################################
+# Verify halt mimirs were NOT set (fake gas tx doesn't trigger slashing/halt)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH|not
+  - .HALTETHTRADING|not
+---
+########################################################################################
+# verify correct vault and pool balances
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-200000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset|tonumber == 1000000000-200000000

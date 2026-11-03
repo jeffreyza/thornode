@@ -1,0 +1,105 @@
+########################################################################################
+# Stable Reserve - Eligibility Guards
+#
+# Asserts that only eligible L1 stables can be deposited into the Stable Reserve.
+# Synths and assets without a TOR anchor or oracle price must be rejected and
+# refunded.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# enable features but DO NOT enable TOR anchor for USDC
+########################################################################################
+type: tx-mimir
+key: StableReserveEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# SCENARIO 1: Reject L1 asset without TOR anchor
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 1
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type == "refund")]|length == 1'
+  - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 0'
+---
+########################################################################################
+# SCENARIO 2: Reject non-stable L1 deposit
+########################################################################################
+# enable TOR anchor first
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 3
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "refund")]|length >= 1'
+  - '[..|select(.type? == "stable_reserve_deposit")]|length == 0'

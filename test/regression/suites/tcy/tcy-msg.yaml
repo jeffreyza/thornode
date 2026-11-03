@@ -1,0 +1,407 @@
+type: env
+key: TCY_CLAIMING_HALT
+value: "0"
+---
+type: env
+key: TCY_STAKING_HALT
+value: "0"
+---
+type: env
+key: TCY_UNSTAKING_HALT
+value: "0"
+---
+type: env
+key: TCY_STAKE_SYSTEM_INCOME_BPS
+value: "1000"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usdx-pool-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_tcy_claim }}
+          coins:
+            - amount: "${BAL_TCY_STAKE=20500000000}"
+              denom: tcy
+        - address: {{ addr_thor_fish }}
+          coins:
+            - amount: "110000000"
+              denom: rune
+        - address: {{ addr_thor_cat }}
+          coins:
+            - amount: "${CAT_TCY=100000000}"
+              denom: tcy
+            - amount: "1000000000"
+              denom: rune
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "0"
+            address: {{ addr_module_tcy_claim }}
+            pub_key: ~
+            sequence: "0"
+          name: tcy_claim
+          permissions: []
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "1"
+            address: {{ addr_module_tcy_stake }}
+            pub_key: ~
+            sequence: "0"
+          name: tcy_stake
+          permissions: []
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_goat }}
+          pub_key: null
+          account_number: "2"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_frog }}
+          pub_key: null
+          account_number: "3"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_wolf }}
+          pub_key: null
+          account_number: "4"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_pig }}
+          pub_key: null
+          account_number: "5"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "6"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_cat }}
+          pub_key: null
+          account_number: "7"
+          sequence: "0"
+    thorchain:
+      tcy_claimers:
+        - l1_address: {{ addr_btc_goat }}
+          amount: "${GOAT_TCY=1000}"
+          asset: "BTC.BTC"
+        # Frog address has 2 claims from different ETH assets
+        - l1_address: {{ addr_eth_frog }}
+          asset: "ETH.ETH"
+          amount: "${FROG_TCY_PART_1=2000}"
+        - l1_address: {{ addr_eth_frog }}
+          asset: "ETH.USDX-0X1239999999999999999999999999999999123999"
+          amount: "${FROG_TCY_PART_2=2000}"
+        - l1_address: {{ addr_eth_wolf }}
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
+          amount: "${WOLF_TCY=3000}"
+        - l1_address: {{ addr_eth_pig }}
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999123"
+          amount: "${PIG_TCY=4000}"
+        - l1_address: {{ addr_thor_fish }}
+          asset: "DOGE.DOGE"
+          amount: "${FISH_TCY=5000}"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_TCY_STAKE}
+---
+# protocol-owned TCY = claim-module balance minus outstanding claimer entitlements
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+asserts:
+  - .amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_pig }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_goat }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_frog }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_wolf }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_fish }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_goat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "TCY:{{ addr_thor_goat }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_frog }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "TCY:{{ addr_thor_frog }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_wolf }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "TCY:{{ addr_thor_wolf }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_pig }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "TCY:{{ addr_thor_pig }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "${FISH_RUNE_TCY_TX=100000000}"
+    asset: "rune"
+memo: "TCY:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+#######################################################################################
+# Claiming module should send the corresponding TCY to the different address and      #
+# should receive the RUNE send from TCY txs                                           #
+#######################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
+---
+# protocol-owned TCY is invariant under claiming: claiming reduces both the
+# claim-module balance and the outstanding claimer sum by the same amount.
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+asserts:
+  - .amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_pig }}
+asserts:
+  - .amount|tonumber == ${PIG_TCY}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_goat }}
+asserts:
+  - .amount|tonumber == ${GOAT_TCY}
+---
+#################################################################################
+# FROG address has TCY claim for 2 different assets, it should receive for both #
+#################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_frog }}
+asserts:
+  - .amount|tonumber == ${FROG_TCY_PART_1}+${FROG_TCY_PART_2}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_wolf }}
+asserts:
+  - .amount|tonumber == ${WOLF_TCY}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_fish }}
+asserts:
+  - .amount|tonumber == ${FISH_TCY}
+---
+#################################################################################
+# Stake and unstake tests                                                       #
+#################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "${CAT_TCY}"
+    asset: "tcy"
+memo: "tcy+"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 1
+  - .balances[0].denom == "rune"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+asserts:
+  - .amount|tonumber == ${CAT_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}+${CAT_TCY}
+---
+# Unstake 50%
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "tcy-:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+asserts:
+  - .amount|tonumber == ${CAT_TCY}/2
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CAT_TCY}/2
+---
+# Unstake 100%
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "tcy-:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+status: 400
+asserts:
+  - .code == 3
+  - .message|contains("TCYStaker doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CAT_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}
+---
+# vault will have more than pool
+type: fail-export-invariants

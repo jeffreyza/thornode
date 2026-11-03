@@ -1,0 +1,146 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Lower the gas-related deficit halt threshold so the suite can verify cumulative exposure.
+# With the ETH network fee in btc-eth-pool-state, GetMaxGas(ETH) is 960000.
+########################################################################################
+type: tx-mimir
+key: VaultDeficitGasHaltMaxGasMultiplier
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/VAULTDEFICITGASHALTMAXGASMULTIPLIER
+asserts:
+  - . == 1
+---
+########################################################################################
+# First failed EVM outbound reports fake gas that exceeds the tracked vault ETH balance
+# by one less than the max-gas threshold. This must record deficit without halting.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "1"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "${FIRST_FAKE_GAS=1000959999}"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
+  - '[.deficit[]|select(.asset=="ETH.ETH")]|length == 1'
+  - .deficit[]|select(.asset=="ETH.ETH")|.amount == "${FIRST_DEFICIT=959999}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH|not
+  - .HALTETHTRADING|not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]?.result.events[]? | select(.type=="security" and (.msg|contains("vault deficit created")))]|length >= 1'
+---
+########################################################################################
+# A second below-threshold gas-related deficit pushes the stored ETH deficit total to max gas.
+# The halt decision must use total deficit, not just this one-unit delta.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "1"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "1"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ observe_txid 2 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
+  - '[.deficit[]|select(.asset=="ETH.ETH")]|length == 1'
+  - .deficit[]|select(.asset=="ETH.ETH")|.amount == "${CUMULATIVE_DEFICIT=960000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH > 0
+  - .HALTETHTRADING > 0
+  - .HALTETHCHAIN|not
+---
+########################################################################################
+# Same-asset inbound credit settles the recorded deficit before adding vault balance.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "${CUMULATIVE_DEFICIT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "1"
+          asset: "ETH.ETH"
+      memo: "noop"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
+  - '[.deficit[]?]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset == "0"

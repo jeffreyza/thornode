@@ -1,0 +1,41 @@
+{
+  "skill_name": "simulation-test",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I only want to run the swaps and ragnarok simulation stages with debug logging and a 10 minute timeout. I tried STAGES=swaps,ragnarok DEBUG=1 TIMEOUT=10m make test-simulation but it ran everything. Why?",
+      "expected_output": "The Makefile recipe sets STAGES=$(TEST_SIMULATION_STAGES) on the docker run line, overwriting an exported STAGES, and DEBUG/TIMEOUT are not forwarded. Use make test-simulation TEST_SIMULATION_STAGES=seed,bootstrap,swaps,ragnarok (seed/bootstrap needed for funded users and pools), or test-simulation-no-reset against a running mocknet. Stage order comes from simulationStages() in cmd/main.go.",
+      "files": [],
+      "assertions": [
+        "Explains that the recipe overrides STAGES and tells the user to pass TEST_SIMULATION_STAGES instead",
+        "Says DEBUG and TIMEOUT are not forwarded by the Makefile rather than inventing their effect",
+        "Includes seed and bootstrap (or explains they are needed) when narrowing stages",
+        "Does not claim the listed stage order controls execution order"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a new simulation stage called 'thorname-renew' that registers a THORName for a user, waits a few blocks, renews it, and checks the expiry moved forward.",
+      "expected_output": "A new actor (actors/core or actors/features) embedding Actor, created with NewActor(name, rng), with ops appended to a.Ops, acquiring/releasing a User, returning OpResult values, querying via pkg/thornode, and a Timeout. Registered by adding a simulationStage{name, defaultOn, constructor} entry to simulationStages() in cmd/main.go at the right position; optionally added to TEST_SIMULATION_STAGES in the Makefile.",
+      "files": [],
+      "assertions": [
+        "Uses the real types: Op func(*OpConfig) OpResult with OpResult{Continue, Finish, Error}; does not use types.Result, Run(ctx), Dependencies(), or c.Clients",
+        "Acquires a User with Acquire() and releases it on every exit path",
+        "Registers the stage by adding an entry to simulationStages() in test/simulation/cmd/main.go, not by adding a case to a switch",
+        "Asserts on the expiry change from live queries rather than hard-coded block heights"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The simulation CI job failed with 'actor timed out' on the memoless-refunds stage. How do I reproduce it locally and figure out what happened?",
+      "expected_output": "Read the timeout log fields (op, op_elapsed, timeout) and the dumped actor log; grab the logged random seed and rerun with RANDOM_SEED_HEX plus make test-simulation-no-reset TEST_SIMULATION_STAGES=seed,bootstrap,memoless-refunds after make reset-mocknet; inspect localhost:1317 and Bifrost :6040/status/scanner while it runs; note op errors without Finish are retried and the job is known flaky, so compare with develop.",
+      "files": [],
+      "assertions": [
+        "Uses RANDOM_SEED_HEX with the seed from the 'Random seed set to' log line",
+        "Narrows with TEST_SIMULATION_STAGES (not STAGES=) and includes seed,bootstrap",
+        "Explains that an op Error without Finish is logged and retried, so the timeout's op field identifies the stuck op",
+        "Mentions memoless-refunds lives in actors/features/memoless_refunds.go"
+      ]
+    }
+  ]
+}

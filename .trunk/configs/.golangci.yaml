@@ -1,0 +1,48 @@
+linters:
+  enable:
+    - errcheck
+    - exportloopref
+    - forcetypeassert
+    - gocritic
+    - revive
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - promlinter
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unused
+linters-settings:
+  exhaustive:
+    check-generated: false
+  staticcheck:
+    checks: ["all"]
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+  govet:
+    enable:
+      - shadow
+    settings:
+      shadow:
+        strict: false
+  gosec:
+    excludes:
+      - G107 # variable urls
+      # TODO: re-enable this after fixing all instances.
+      - G115 # integer overflow
+issues:
+  # The paths .trunk/trunk.yaml ignores for all linters, for runs outside trunk
+  # (scripts/golangci-ci.sh).
+  exclude-dirs:
+    - openapi/gen
+    - bifrost/tss/go-tss
+    - bifrost/txscript
+  exclude-files:
+    - gen\.go$
+  max-issues-per-linter: 0
+  max-same-issues: 0

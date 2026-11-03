@@ -1,0 +1,42 @@
+{
+  "skill_name": "api-endpoint",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a new endpoint GET /thorchain/pool/{asset}/depth_history?height= that returns the pool's balance_rune and balance_asset. Which files do I touch and what commands do I run?",
+      "expected_output": "Lists: request/response messages in proto/thorchain/v1/types/query_pool.proto (with string height), an rpc with google.api.http get in proto/thorchain/v1/types/query.proto, make proto-gen, an exported wrapper in x/thorchain/grpc_query.go using checkHeightParam + unwrapSdkContext, a lowercase queryX in x/thorchain/querier.go, a MarshalJSONPB override if int64/maps are involved, a hand-written openapi.yaml entry with queryHeight param, make openapi, a QuerierSuite gocheck test, and committing generated files because CI's generate job diffs.",
+      "files": [],
+      "assertions": [
+        "Puts the proto under proto/thorchain/v1/types/, not x/thorchain/types/query.proto",
+        "Describes the two-layer pattern: exported queryServer method in grpc_query.go calling lowercase queryX in querier*.go",
+        "Says openapi/openapi.yaml must be edited by hand and make openapi regenerates openapi/gen",
+        "Mentions make proto-gen (Docker proto-builder) for generation",
+        "Does not use query.Paginate or a thorchain.v3 proto package"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My new endpoint returns {\"count\":\"42\"} but openapi says count is an integer. Why, and how do I fix it?",
+      "expected_output": "Explains the gRPC gateway uses gogo gateway.JSONPb (module.go CustomGRPCGatewayRouter), which renders int64 as strings. Fix: add a MarshalJSONPB override in x/thorchain/types/jsonpb_marshalers.go (jsonify the struct or an openapi type) and the jsonpb.JSONPBMarshaler interface assertion; add a querier test that unmarshals into the openapi/gen type.",
+      "files": [],
+      "assertions": [
+        "Names x/thorchain/types/jsonpb_marshalers.go and MarshalJSONPB as the fix",
+        "Attributes the string rendering to proto JSON int64 encoding via the gogo JSONPb gateway marshaler",
+        "Suggests a conformance test unmarshalling into the openapi/gen type",
+        "Does not suggest changing the field to a string in openapi.yaml as the primary fix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to add a `last_updated_time` field using time.Now() to the /thorchain/pool/{asset} response. Any concerns?",
+      "expected_output": "Flags that the Pool query is listed in wasmAcceptedQueries in app/wasm.go, so WASM contracts call it inside transactions and its response is consensus-critical: wall-clock time is non-deterministic and must not be used; changing the response shape is a consensus change requiring blockchain-code-review. Suggests block height/time from ctx instead, and updating openapi.yaml, any MarshalJSONPB, and make openapi.",
+      "files": [],
+      "assertions": [
+        "Identifies Pool as a WASM-accepted query in app/wasm.go",
+        "Rejects time.Now() as non-deterministic for a consensus-visible query",
+        "States that changing the response type of a WASM-accepted query is a consensus change",
+        "Mentions updating openapi/openapi.yaml alongside the proto field"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+########################################################################################
+## XMR add liquidity. The asset-side inbound always carries an "xmrunknown1..."
+## sender marker, so the LP's asset address must come from the memo
+## (+:XMR.XMR:<rune_pair>/<xmr_asset_address>) or a registered reference memo, and
+## must never be stored as the marker itself.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# RUNE side first: stage pending RUNE paired with fox's XMR address
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "+:XMR.XMR:{{ addr_xmr_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .asset_address == "{{ addr_xmr_fox }}"
+  - .pending_rune == "10000000000"
+  - .units == "0"
+---
+########################################################################################
+# XMR side from an unknown sender with an explicit pair/asset address completes it
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "100000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "+:XMR.XMR:{{ addr_thor_fox }}/{{ addr_xmr_fox }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_fox }}
+asserts:
+  - .asset_address == "{{ addr_xmr_fox }}"
+  - .rune_address == "{{ addr_thor_fox }}"
+  - .pending_rune == "0"
+  - .pending_asset == "0"
+  - .units|tonumber > 0
+  - .asset_deposit_value|tonumber > 0
+  - .rune_deposit_value|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1100000000000"
+  - .balance_rune == "110001622379"
+  - .LP_units == "109999946728"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# A different RUNE address cannot bind to fox's established XMR asset address; the
+# add is refunded to the asset address from the ADD memo, not to the marker.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 2 }}'
+      chain: XMR
+      from_address: xmrunknown1yqtan6smc3du0l4h52y9ufjs04t2tsvwx80v75
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "+:XMR.XMR:{{ addr_thor_cat }}/{{ addr_xmr_fox }}"
+    block_height: 11
+    xmr_mined_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "XMR"
+  - .[0].in_hash == "{{ observe_txid 2 }}"
+  - .[0].original_memo == "REFUND:{{ observe_txid 2 }}"
+  - .[0].coin.amount == "9999995000"
+  - .[0].to_address == "{{ addr_xmr_fox }}"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.asset == "XMR.XMR"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  # cat's genesis LP is untouched and did not pick up fox's asset address
+  - .asset_address == "{{ addr_xmr_cat }}"
+  - .units == "100000000000"
+---
+########################################################################################
+# Memoless add: register the ADD memo on THORChain, then send XMR with r:<ref>.
+########################################################################################
+type: tx-mimir
+key: MemolessTxnTTL
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "reference:XMR.XMR:+:XMR.XMR:{{ addr_thor_pig }}/{{ addr_xmr_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/XMR.XMR/00001
+asserts:
+  - .asset == "XMR.XMR"
+  - .memo == "+:XMR.XMR:{{ addr_thor_pig }}/{{ addr_xmr_pig }}"
+  - .reference == "00001"
+  - .registered_by == "{{ addr_thor_fox }}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 3 }}'
+      chain: XMR
+      from_address: xmrunknown1y3mty60nyg4h3p875yzuwfapypxmw5pvhfezdx
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "r:00001"
+    block_height: 12
+    xmr_mined_height: 12
+    finalise_height: 12
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_pig }}
+asserts:
+  # the registered pair stages the XMR side as pending asset under the RUNE
+  # address, keeping the registered XMR address rather than the xmrunknown marker
+  - .asset_address == "{{ addr_xmr_pig }}"
+  - .rune_address == "{{ addr_thor_pig }}"
+  - .units == "0"
+  - .pending_asset == "10000000000"
+  - .pending_tx_id == "{{ observe_txid 3 }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/XMR.XMR/00001
+asserts:
+  - .used_by_txs|length == 1
+  - .used_by_txs[0] == "{{ observe_txid 3 }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  # staged XMR is tracked as pending inbound, not pool depth
+  - .pending_inbound_asset == "10000000000"
+  - .balance_asset == "1100000005000"
+---
+########################################################################################
+# RUNE side from pig completes the memoless-staged XMR add
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "20000000000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "+:XMR.XMR:{{ addr_xmr_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR/liquidity_provider/{{ addr_thor_pig }}
+asserts:
+  - .asset_address == "{{ addr_xmr_pig }}"
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .units|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .pending_inbound_asset == "0"
+  - .balance_asset == "1110000005000"
+---
+########################################################################################
+# Memoless XMR ADD registrations must name an asset address
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "reference:XMR.XMR:+:XMR.XMR:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/XMR.XMR/00002
+status: 400
+asserts:
+  - .message|contains("reference memo not found for asset XMR.XMR and reference 00002")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  # only the mismatch refund from above
+  - .|length == 1

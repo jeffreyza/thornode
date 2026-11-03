@@ -1,0 +1,228 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# enable POL and RUNEPool
+########################################################################################
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 5000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLMaxNetworkDeposit
+value: 1000000000
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: RUNEPoolMaxReserveBackstop
+value: 1000000000
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: POLTargetSynthPerPoolDepth
+value: 2500
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: POLMaxPoolMovement
+value: 5000 # .5%
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: tx-mimir
+key: POLBuffer
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 5
+---
+type: tx-mimir
+key: POL-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 6
+---
+type: tx-mimir
+key: RUNEPoolEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 7
+---
+# effectively disable emissions to avoid skew for math checks
+type: tx-mimir
+key: EmissionCurve
+value: 1000000000000
+signer: {{ addr_thor_dog }}
+sequence: 8
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# mint synth to trigger POL add (only one to reach max)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000000000"
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000000" # If too high, will hit MaxSynthPerPoolDepth capacity limit.
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.pnl == "${RESERVE_PNL=-2535083}"
+  - .pol.value == "${POL_VALUE=1717128590}"
+  - .reserve.pnl == "${RESERVE_PNL}"
+  - .reserve.value == "${POL_VALUE}"
+  - 'all(.providers|.[]; . == "0")'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount == "${RESERVE_BALANCE=34998301226484}"
+---
+########################################################################################
+# RUNEPool deposit acquires POL ownership from reserve
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${POL_VALUE}"
+    asset: "rune"
+memo: "pool+"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# excess RUNEPool deposit (here from provider cat) remains pending
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "${POL_VALUE}"
+    asset: "rune"
+memo: "pool+"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .providers.units|tonumber == 2*${POL_VALUE=1719663673}
+  - .providers.pending_units == "${POL_VALUE}"
+  - .providers.value == .providers.current_deposit
+  - .providers.pnl == "0"
+  - .reserve.units == "0"
+  - .reserve.value == "0"
+  - .reserve.pnl == "${RESERVE_PNL}"
+  - .reserve.current_deposit|tonumber + ${RESERVE_PNL} == 0
+  - .pol.pnl == "${RESERVE_PNL}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_providers
+asserts:
+  - .|length == 2
+  - .[0].units == "${POL_VALUE}"
+  - .[0].units == .[1].units # both have same units
+  - .[0].deposit_amount == .[1].deposit_amount # both have same deposit amount
+---
+########################################################################################
+# swap from synth, representing a rise in RUNE price reflected as a drop in POL value
+########################################################################################
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .|[.result[]|select(.denom=="btc/btc")] | length == 1
+  - .result[]|select(.denom=="btc/btc").amount == "${CAT_SYNTH_BALANCE=24489542}"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "${CAT_SYNTH_BALANCE}"
+    asset: "BTC/BTC"
+memo: "=:RUNE"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# RUNEPool position now worth less RUNE, fox withdraws and realizes loss
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "pool-:10000"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# cat should withdraw same amount
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "pool-:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_providers
+asserts:
+  - .|length == 2
+  - .[0].units == "0"
+  - .[1].units == "0"
+  - .[0].deposit_amount == .[1].deposit_amount # same deposit
+  - .[0].withdraw_amount == .[1].withdraw_amount # same withdraw
+  - .[0].pnl == .[1].pnl # same pnl
+  - .[0].pnl == "-${PROVIDER_PNL=33246635}"
+---
+########################################################################################
+# reserve owns the POL with loss, but balance increased by sum of provider loss
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.pnl|tonumber == ${RESERVE_PNL}-2*${PROVIDER_PNL} # original reserve loss remains
+  - .providers.units == "0"
+  - .providers.pending_units == "0"
+  - .providers.value == "0"
+  - (.providers.current_deposit|tonumber) + (.providers.pnl|tonumber) == 0
+  - .reserve.pnl|tonumber == ${RESERVE_PNL}
+  - (.reserve.pnl|tonumber) + (.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount|tonumber == ${RESERVE_BALANCE}+2*${PROVIDER_PNL}+5*${GAS=2000000}

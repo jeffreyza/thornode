@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "seed": 270919,
+  "mutants": [
+    {
+      "id": "quorum_boundary_lowered",
+      "mode": "fast",
+      "file": "x/thorchain/types/types.go",
+      "package": "./x/thorchain/types",
+      "test": "^TestSecurityMutationQuorumBoundary$",
+      "old": "if (total*2)%SuperMajorityFactor > 0 {\n\t\tmin += 1\n\t}\n\n\treturn signers >= min",
+      "new": "if (total*2)%SuperMajorityFactor > 0 {\n\t\tmin += 1\n\t}\n\n\treturn signers >= min-1",
+      "intent": "One fewer validator reaches the on-chain supermajority"
+    },
+    {
+      "id": "halt_global_boundary_delayed",
+      "mode": "fast",
+      "file": "bifrost/pkg/chainclients/shared/signing/halt.go",
+      "package": "./bifrost/pkg/chainclients/shared/signing",
+      "test": "^TestSecurityMutationSigningHaltBoundary$",
+      "old": "haltGlobal <= height",
+      "new": "haltGlobal < height",
+      "intent": "Global signing continues at the activation height"
+    },
+    {
+      "id": "attestation_signature_bypass",
+      "mode": "fast",
+      "file": "bifrost/observer/generic_attestation.go",
+      "package": "./bifrost/observer",
+      "test": "^TestInvalidLocalAttestationNeverEnqueues$",
+      "old": "if err := verifySignature(signBz, attestation.Signature, attestation.PubKey); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %x - %w\", attestation.PubKey, err)",
+      "new": "if err := func([]byte) error { return nil }(signBz); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %x - %w\", attestation.PubKey, err)",
+      "intent": "Unauthenticated peer attestation enters the vote set"
+    },
+    {
+      "id": "attestation_replay_counted",
+      "mode": "fast",
+      "file": "bifrost/observer/generic_attestation.go",
+      "package": "./bifrost/observer",
+      "test": "^TestAddAttestation$",
+      "old": "return fmt.Errorf(\"item is not valid\")\n\t}\n\n\tfor _, item := range s.attestations {",
+      "new": "return fmt.Errorf(\"item is not valid\")\n\t}\n\n\tfor _, item := range s.attestations[:0] {",
+      "intent": "Repeated signature can inflate attestation count"
+    },
+    {
+      "id": "safe_subtract_wrong_direction",
+      "mode": "fast",
+      "file": "common/type_convert.go",
+      "package": "./common",
+      "test": "^TestSecurityMutationSafeSubConservation$",
+      "old": "return input1.Sub(input2)",
+      "new": "return input2.Sub(input1)",
+      "intent": "Balances lose the expected debit accounting"
+    },
+    {
+      "id": "halt_chain_boundary_delayed",
+      "mode": "fast",
+      "file": "bifrost/pkg/chainclients/shared/signing/halt.go",
+      "package": "./bifrost/pkg/chainclients/shared/signing",
+      "test": "^TestSecurityMutationSigningHaltBoundary$",
+      "old": "haltChain <= height",
+      "new": "haltChain < height",
+      "intent": "Chain signing continues at the activation height"
+    },
+    {
+      "id": "quorum_excess_signers_allowed",
+      "mode": "fast",
+      "file": "x/thorchain/types/types.go",
+      "package": "./x/thorchain/types",
+      "test": "^TestSecurityMutationQuorumBoundary$",
+      "old": "func HasSuperMajority(signers, total int) bool {\n\tif signers > total {",
+      "new": "func HasSuperMajority(signers, total int) bool {\n\tif signers < 0 {",
+      "intent": "Impossible signer counts can be treated as valid quorum"
+    }
+  ],
+  "control": {
+    "id": "weak_quorum_oracle",
+    "mutant": "quorum_boundary_lowered",
+    "test": "^TestMutationWeakUnanimity$",
+    "expected": "survived"
+  }
+}

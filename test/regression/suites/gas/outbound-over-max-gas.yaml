@@ -1,0 +1,163 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# MaxETHGas = 50000000 (0.5 ETH)
+########################################################################################
+########################################################################################
+# swap to token
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET=ETH.USDX-0X9999999999999999999999999999999999999999}:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].coin.amount == "${OUT_AMOUNT=11291832900}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+asserts:
+  - .[0].fee_spent_rune == "0"
+---
+########################################################################################
+# observe outbound using more than max gas, but under MaxETHGas is ok
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "${ASSET}"
+          decimals: 8
+      gas:
+        - amount: "49999999"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTETHCHAIN|not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+asserts:
+  - .[0].fee_spent_rune == "5000019560"
+---
+########################################################################################
+# swap to token
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "15000000000"
+    asset: "rune"
+memo: "=:${ASSET}:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].coin.amount == "${OUT_AMOUNT=9027342900}"
+---
+########################################################################################
+# observe outbound using more than MaxETHGas should slash and leave in queue
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "${ASSET}"
+          decimals: 8
+      gas:
+        - amount: "50000000" # should trigger slash >= MaxETHGas
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1 # outbound remains in queue
+---
+# outbound fee should be unchanged (was covered by the slash)
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+asserts:
+  - .[0].fee_spent_rune == "5000019560"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="slash")]|length >= 1' # slash event
+---
+# outbound fee for gas asset should be unchanged
+type: check
+endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+asserts:
+  - .[0].fee_spent_rune == "0"
+---
+# eth pool should be deducted by the sum of outbound gas
+type: check
+endpoint: http://localhost:1317/thorchain/pool/eth.eth
+asserts:
+  - .balance_asset == "900000001"
+---
+# eth vault should be deducted by the sum of outbound gas
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount == "900000001"
+---
+########################################################################################
+# Verify halt pattern: HALTSIGNINGETH and HaltETHTrading should be set
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGETH > 0 # signing halted
+  - .HALTETHTRADING > 0 # trading halted
+  - .HALTETHCHAIN|not # chain is NOT halted

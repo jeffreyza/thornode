@@ -1,0 +1,701 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Send RUNE to pig for affiliate thorname setup
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "15000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create THORName w/ preferred asset for non-existent pool
+# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}:ETH.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+status: 500
+asserts:
+  - .code == 2
+  - .message|contains("THORName doesn't exist")
+---
+########################################################################################
+# Create THORName w/ preferred asset
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == "BTC.BTC"
+---
+########################################################################################
+# Add BTC Alias to thorname
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "~:test:BTC:{{ addr_btc_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == "BTC.BTC"
+---
+########################################################################################
+# check aff collector + addr_thor_fox balance before swap
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "4994000000"
+---
+########################################################################################
+# swap BTC -> RUNE w/ "test" affiliate
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:500"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# check aff collector + addr_thor_pig balance after swap, balance should be same, aff module should increase
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "226763410"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "226763410"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "4994000000"
+---
+########################################################################################
+# Swap RUNE -> BTC w/ affiliate "test"
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_cat }}::test:500"
+---
+type: create-blocks
+count: 2
+---
+########################################################################################
+# check aff collector + addr_thor_pig balance after swap, balance should be same, aff module should increase
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "474822488"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "474822488"
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "4994000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .[0].coin.amount == "${OUT_AMOUNT=4710583}"
+---
+# Observe the outbound.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 6
+    finalise_height: 6
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Swap RUNE -> BTC w/ affiliate "test", which should trigger preferred asset swap
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_cat }}::test:500"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].original_memo == "OUT:{{ native_txid -1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=21148371}"
+---
+# Observe the main swap outbound.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 8
+    finalise_height: 8
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:1000"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins|length == 0
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "4994000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 1
+  - .end_block_events[]|select(.type == "scheduled_outbound").to_address == "{{ addr_btc_pig }}"
+  - .end_block_events[]|select(.type == "scheduled_outbound").coin_amount == "${OUT_ONE=1936883}"
+  - .end_block_events[]|select(.type == "scheduled_outbound").coin_asset == "BTC.BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "${IN_HASH=C3ED9A4B91884C692B924E38706085217974753504C756F83FD446CB6CA07313}"
+  - .[0].coin.amount == "${OUT_ONE}"
+---
+# Observe the preferred asset swap outbound.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_pig }}
+      coins:
+        - amount: "${OUT_ONE}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:${IN_HASH}"
+    block_height: 14
+    finalise_height: 14
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Test PreferredAsset swap being refunded
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:500"
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "${RUNE_AMOUNT=384656939}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune").amount == "${RUNE_AMOUNT}"
+---
+# BTC paused
+type: tx-mimir
+key: HaltBTCTrading
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTBTCTRADING == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "50000000000"
+    asset: "rune"
+memo: "=:ETH.ETH:{{ addr_eth_cat }}::test:1000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "${RUNE_AMOUNT}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune").amount == "${RUNE_AMOUNT}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "${IN_HASH=F7B3511C55618B34293F9BC879D703152966A25AC8F346506F4017C1F23A39B5}"
+  - .[0].coin.amount == "${OUT_AMOUNT=199356993}"
+  # Despite the section title, no PreferredAsset swap refund?
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:${IN_HASH}"
+    block_height: 18
+    finalise_height: 18
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Swap ETH -> RUNE w/ affiliate "test", which should trigger preferred asset swap
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:600"
+    block_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=6546200814}"
+  - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=1080794800}"
+  # Also confirm full THORName response format.
+  - |
+    . == {
+      "name": "test",
+      "expire_block_height": 455256004,
+      "owner": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+      "preferred_asset": "BTC.BTC",
+      "preferred_asset_swap_threshold_rune": "${SWAP_THRESHOLD_RUNE}",
+      "affiliate_collector_rune": "${TEST_THORNAME_RUNE}",
+      "aliases": [
+        {
+          "chain": "THOR",
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+        },
+        {
+          "chain": "BTC",
+          "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
+        }
+      ]
+    }
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "${TEST_THORNAME_RUNE}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.end_block_events[]|select(.type == "refund")]|length == 0
+---
+########################################################################################
+# Update "test" THORName to set PreferredAssetOutboundFeeMultiplier to 400
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "1000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_pig }}::::400"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .preferred_asset == "BTC.BTC"
+  - .preferred_asset_outbound_fee_multiplier == 400
+---
+########################################################################################
+# Swap ETH -> RUNE w/ affiliate "test", which should trigger preferred asset swap
+# THORName custom multiplier of 400 - Testing PreferredAssetOutboundFeeMultiplier
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 8 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:600"
+    block_height: 22
+    finalise_height: 22
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=8025281235}"
+  - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=4323219200}"
+  # Also confirm full THORName response format.
+  - |
+    . == {
+      "name": "test",
+      "expire_block_height": 455306004,
+      "owner": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+      "preferred_asset": "BTC.BTC",
+      "preferred_asset_swap_threshold_rune": "${SWAP_THRESHOLD_RUNE}",
+      "preferred_asset_outbound_fee_multiplier": 400,
+      "affiliate_collector_rune": "${TEST_THORNAME_RUNE}",
+      "aliases": [
+        {
+          "chain": "THOR",
+          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+        },
+        {
+          "chain": "BTC",
+          "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
+        }
+      ]
+    }
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "${TEST_THORNAME_RUNE}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.end_block_events[]|select(.type == "refund")]|length == 0
+---
+########################################################################################
+# Unhalt BTC trading so automatic payout can occur
+########################################################################################
+type: tx-mimir
+key: HaltBTCTrading
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTBTCTRADING == 0
+---
+########################################################################################
+# Do another BTC -> RUNE swap to trigger automatic payout with multiplier 400
+# Current balance ~8B RUNE, threshold is 4.3B RUNE, so we're already over threshold
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 9 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::test:1000"
+    block_height: 25
+    finalise_height: 25
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+---
+########################################################################################
+# Verify automatic payout triggered - affiliate collector should be 0 or near 0
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .affiliate_collector_rune == "0"
+  - .preferred_asset_outbound_fee_multiplier == 400
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+asserts:
+  - .coins|length == 0
+---
+########################################################################################
+# Verify scheduled outbound to BTC address (automatic payout to preferred asset)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 1
+  - .end_block_events[]|select(.type == "scheduled_outbound").to_address == "{{ addr_btc_pig }}"
+  - .end_block_events[]|select(.type == "scheduled_outbound").coin_amount == "${PAYOUT_AMOUNT=5507354}"
+  - .end_block_events[]|select(.type == "scheduled_outbound").coin_asset == "BTC.BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].coin.amount == "${PAYOUT_AMOUNT}"
+  - .[0].to_address == "{{ addr_btc_pig }}"
+  - .[0].in_hash == "${IN_HASH_PAYOUT=E05C988A10E1DE9C2538EA8888772A95F199F1DD96FA4E1F43401BFF2A0F33D1}"
+---
+# Observe the automatic preferred asset payout
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_pig }}
+      coins:
+        - amount: "${PAYOUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:${IN_HASH_PAYOUT}"
+    block_height: 27
+    finalise_height: 27
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

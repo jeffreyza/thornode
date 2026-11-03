@@ -1,0 +1,224 @@
+########################################################################################
+## XMR as the inbound side: XMR -> RUNE, XMR -> BTC, and a migrate inbound from an
+## unknown source vault. Monero senders are not recoverable on-chain, so bifrost
+## reports an "xmrunknown1..." marker as the from_address and the observation
+## must target the monovault's FROST (ed25519) pubkey.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-split-vault-pool-state.yaml" }}
+---
+# Launch profile: XMR memoless outbounds stay disabled.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: ENABLEMEMOLESSOUTBOUND
+          value: "0"
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEMEMOLESSOUTBOUND == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain == "XMR")|.address == "{{ addr_xmr_dog }}"
+  - .[]|select(.chain == "XMR")|.pub_key == "{{ pubkey_dog_eddsa }}"
+  - .[]|select(.chain == "BTC")|.address == "{{ addr_btc_cat }}"
+---
+########################################################################################
+# XMR -> RUNE from an unknown sender
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: XMR
+      from_address: xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 10
+    xmr_mined_height: 10
+    finalise_height: 10
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/status/{{ observe_txid 1 }}
+asserts:
+  - .tx.chain == "XMR"
+  - .tx.from_address == "xmrunknown1d7nfv2cck4ye248wm85e902rme3f2x9eg6etk2"
+  - .stages.inbound_observed.completed == true
+  - .stages.swap_finalised.completed == true
+  - .out_txs|length == 1
+  - .out_txs[0].chain == "THOR"
+  - .out_txs[0].to_address == "{{ addr_thor_fox }}"
+  - .out_txs[0].coins|length == 1
+  - .out_txs[0].coins[0].asset == "THOR.RUNE"
+  - .out_txs[0].coins[0].amount|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber > 2500000000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1010000000000"
+  - .balance_rune|tonumber < 100000000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset == "XMR.XMR")|.amount == "1010000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# XMR -> BTC: the BTC leg is paid from the regular BTC vault, not the XMR monovault
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 2 }}'
+      chain: XMR
+      from_address: xmrunknown1yqtan6smc3du0l4h52y9ufjs04t2tsvwx80v75
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+    block_height: 11
+    xmr_mined_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "BTC"
+  - .[0].in_hash == "{{ observe_txid 2 }}"
+  - .[0].vault_pub_key == "{{ pubkey_cat }}"
+  - .[0].to_address == "{{ addr_btc_fox }}"
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].coin.amount == "${BTC_OUT=936052}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 3 }}'
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${BTC_OUT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 2 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_cat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/status/{{ observe_txid 2 }}
+asserts:
+  - .stages.outbound_signed.completed == true
+  - .out_txs[0].chain == "BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1020000000000"
+---
+########################################################################################
+# MIGRATE inbound from an unknown source is not credited to the XMR monovault
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 4 }}'
+      chain: XMR
+      from_address: xmrunknown1y3mty60nyg4h3p875yzuwfapypxmw5pvhfezdx
+      to_address: {{ addr_xmr_dog }}
+      coins:
+        - amount: "10000000000"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "MIGRATE:1"
+    block_height: 12
+    xmr_mined_height: 12
+    finalise_height: 12
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset == "XMR.XMR")|.amount == "1020000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/XMR.XMR
+asserts:
+  - .balance_asset == "1020000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

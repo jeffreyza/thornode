@@ -1,0 +1,70 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: SigningTransactionPeriod
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# The swap succeeds, but its ETH outbound will never be observed.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DASH
+      from_address: {{ addr_dash_fox }}
+      to_address: {{ addr_dash_dog }}
+      coins:
+        - amount: "100000000"
+          asset: DASH.DASH
+          decimals: 8
+      gas:
+        - amount: "4000"
+          asset: DASH.DASH
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}/XpANHDZNTgEyM2FN8QjERafkRaK4X8Uaeq"
+    block_height: 100
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].chain == "ETH"
+---
+# First timeout reschedules; the second causes reverse-swap recovery at height 10.
+type: create-blocks
+count: 7
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block?height=10
+asserts:
+  - '[.end_block_events[] | select(.type == "failed_outbound_recovery" and .recovery_type == "reverse_swap")] | length == 1'
+---
+# Recovery must reject the mainnet custom refund and return DASH to its sender.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].chain == "DASH" and .[0].coin.asset == "DASH.DASH"
+  - .[0].to_address == "{{ addr_dash_fox }}"
+  - .[0].coin.amount | tonumber > 0

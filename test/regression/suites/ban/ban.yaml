@@ -1,0 +1,230 @@
+# effectively disable emissions to simplify math
+type: env
+key: EMISSION_CURVE
+value: "1000000000000"
+---
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_deer }}
+          pub_key: null
+          account_number: "12"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_deer }}
+          coins:
+            - denom: rune
+              amount: "2500000000000"
+        - address: {{ addr_module_bond }}
+          coins:
+            - denom: rune
+              amount: "15000000000000"
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_deer }}
+          bond_address: {{ addr_thor_deer }}
+          pub_key_set:
+            secp256k1: {{ pubkey_deer }}
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_deer }}
+          version: {{ version }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - ".|length == 6"
+  - '[.[]|select(.status == "Active")]|length == 5'
+---
+########################################################################################
+# non-validators ban transactions are rejected
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_dog }}
+to_address: {{ addr_thor_bird }}
+amount:
+  - denom: "rune"
+    amount: "500000000"
+---
+type: create-blocks
+count: 1
+---
+type: tx-ban
+signer: {{ addr_thor_bird }}
+node_address: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_bird }}
+asserts:
+  - .result.value.sequence == "0"
+---
+########################################################################################
+# ban active goat validator from the network
+########################################################################################
+# not banned after 1/5
+type: tx-ban
+signer: {{ addr_thor_fox }}
+node_address: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Active"
+  - .preflight_status.status == "Whitelisted"
+---
+# not banned after 2/5
+type: tx-ban
+signer: {{ addr_thor_pig }}
+node_address: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Active"
+  - .preflight_status.status == "Whitelisted"
+---
+# not banned after 3/5
+type: tx-ban
+signer: {{ addr_thor_frog }}
+node_address: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Active"
+  - .preflight_status.status == "Whitelisted"
+---
+# banned after 4/5, node bond slashed
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount|tonumber == ${RESERVE_BALANCE=35000002000000}
+---
+type: tx-ban
+signer: {{ addr_thor_cat }}
+node_address: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Disabled"
+  - .preflight_status.status == "Disabled"
+  - .forced_to_leave == true
+  - .requested_to_leave == false
+  - .total_bond == "2000000000000" # -5K RUNE
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount|tonumber == ${RESERVE_BALANCE}+500000000000
+---
+########################################################################################
+# ban standby deer validator from the network (now only 4 active validators)
+########################################################################################
+# not banned after 1/4
+type: tx-ban
+signer: {{ addr_thor_fox }}
+node_address: {{ addr_thor_deer }}
+---
+# disable ban slash for this one
+type: tx-mimir
+key: BondSlashBan
+value: 0
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: BondSlashBan
+value: 0
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: BondSlashBan
+value: 0
+signer: {{ addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/BondSlashBan
+asserts:
+  - . == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .native_tx_fee_rune	== "${NATIVE_TX_FEE=2000000}"
+---
+# Reserve balance greater by the nodes' MsgMimir costs
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount|tonumber == ${RESERVE_BALANCE}+500000000000 + 3 * ${NATIVE_TX_FEE}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_deer }}
+asserts:
+  - .status == "Standby"
+  - .preflight_status.status == "Whitelisted"
+---
+# not banned after 2/4
+type: tx-ban
+signer: {{ addr_thor_pig }}
+node_address: {{ addr_thor_deer }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_deer }}
+asserts:
+  - .status == "Standby"
+  - .preflight_status.status == "Whitelisted"
+---
+# banned after 3/4
+type: tx-ban
+signer: {{ addr_thor_frog }}
+node_address: {{ addr_thor_deer }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_deer }}
+asserts:
+  - .status == "Standby"
+  - .preflight_status.status == "Disabled"
+  - .forced_to_leave == true
+  - .requested_to_leave == false
+---
+# ban slash was disabled on this one
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/reserve
+asserts:
+  - .coins[0].amount|tonumber == ${RESERVE_BALANCE}+500000000000 + 3 * ${NATIVE_TX_FEE}

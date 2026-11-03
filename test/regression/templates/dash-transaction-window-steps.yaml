@@ -1,0 +1,43 @@
+# Reusable single-operation steps. Keep document separators in the calling suites.
+{{ define "dash-credit-in" }}
+type: tx-observed-in
+signer: {{ . }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DASH
+      from_address: {{ addr_dash_cat }}
+      to_address: {{ addr_dash_dog }}
+      coins:
+        - asset: DASH.DASH
+          amount: "100000000"
+          decimals: 8
+      gas:
+        - asset: DASH.DASH
+          amount: "4000"
+      memo: TEST
+    block_height: 100
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+{{ end }}
+{{ define "dash-credit-out" }}
+type: tx-observed-out
+signer: {{ . }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: DASH
+      from_address: {{ addr_dash_dog }}
+      to_address: {{ addr_dash_cat }}
+      coins:
+        - asset: DASH.DASH
+          amount: "${OUT_AMOUNT}"
+          decimals: 8
+      gas:
+        - asset: DASH.DASH
+          amount: "6000"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 101
+    finalise_height: 101
+    observed_pub_key: {{ pubkey_dog }}
+{{ end }}

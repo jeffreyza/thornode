@@ -1,0 +1,42 @@
+{
+  "skill_name": "regression-test",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a regression test that seeds a BTC pool, has fox swap 0.5 BTC to RUNE via an inbound observation, and checks fox's RUNE balance increased. Where do I put it and how do I run just that file?",
+      "expected_output": "A suite under test/regression/suites/<feature>/ starting with {{ template \"default-state.yaml\" }} --- {{ template \"btc-pool-state.yaml\" }}, a tx-observed-in signed by dog with observed_pub_key {{ pubkey_dog }} and id {{ observe_txid 1 }}, create-blocks, then a check on localhost:1317 with string-aware asserts. Run with make test-regression RUN=<path regex>; commit the generated mnt/exports and mnt/blocks fixtures.",
+      "files": [],
+      "assertions": [
+        "Uses real `{{ ... }}` template syntax, not the prettier-mangled `{ { ... } }` form",
+        "Composes default-state.yaml with a pool template instead of hand-redefining the BTC pool in a second state op (deep merge appends pools, it does not match by asset)",
+        "Signs the observation with dog and sets observed_pub_key to {{ pubkey_dog }}",
+        "Treats integer API fields as strings or uses tonumber in the jq assert",
+        "Runs one file with RUN=<regex> and mentions committing test/regression/mnt/exports and mnt/blocks fixtures"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My MR changed outbound fee logic and now 40 regression suites fail with export diffs and a bunch of == assert mismatches. What's the fastest safe way to update them?",
+      "expected_output": "Confirm the diff is intended, then use AUTO_UPDATE=1 for == asserts and EXPORT=1 to regenerate mnt/exports and mnt/blocks fixtures, scoped with RUN where possible, and review the YAML and fixture diffs. Note AUTO_UPDATE only rewrites == asserts. Stay on Go 1.26.x since 1.27 corrupts exports.",
+      "files": [],
+      "assertions": [
+        "Recommends AUTO_UPDATE=1 for assert values and EXPORT=1 for fixtures, and says to review the resulting diffs",
+        "States AUTO_UPDATE only fixes == asserts, not inequality or computed asserts",
+        "Names the fixture locations test/regression/mnt/exports and test/regression/mnt/blocks",
+        "Warns against Go 1.27 for regenerating exports",
+        "Does not claim make variables must be placed after `make test-regression` to take effect"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "In my regression test fox sends three tx-deposit ops in the same block and the second and third fail with a sequence error. The old docs said to put sequence: 0 on all of them. What's wrong?",
+      "expected_output": "sequence is an explicit account sequence override (txf.WithSequence); same-block txs from one signer need consecutive values starting at the account's current sequence (0, 1, 2 for a fresh account), or omit sequence when only one tx per block. Setting 0 on all reuses the same sequence.",
+      "files": [],
+      "assertions": [
+        "Says to give consecutive sequence values per tx from the same signer within a block, starting at the account's current sequence",
+        "Does not tell the user to use sequence: 0 for every tx",
+        "Points at test/regression/cmd/operations.go or an existing suite as evidence"
+      ]
+    }
+  ]
+}

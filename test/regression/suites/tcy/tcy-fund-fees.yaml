@@ -1,0 +1,84 @@
+type: env
+key: EMISSION_CURVE
+value: "100000000"
+---
+type: env
+key: TCY_STAKE_SYSTEM_INCOME_BPS
+value: "1000"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+#######################################################################################
+#  Emission curve is set really high so no rewards are earn from block reward         #
+#######################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ native_txid -1 }}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=8257462}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+############################################################################
+# After swap is executed we get ~10% of the fees to TCY Fund:              #
+# Block 2:                                                                 #
+#   - init_system_income = 990990645                                      #
+#     (system_income + tcy_stake_reward + dev_fund_reward + income_burn)   #
+#     (891891581 + 99099064 + 0 + 0)                                     #
+#                                                                          #
+#   - tcy_stake_reward = 99099064                                         #
+#                                                                          #
+# init_system_income/tcy_stake_reward -> 990990645/99099064 = 10%        #
+############################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 99099065

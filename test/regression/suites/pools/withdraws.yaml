@@ -1,0 +1,85 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Nonsense withdraw attempt
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "-:ETH.nonsense:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.log? and .code != 0)] | length == 1
+  - ..|select(.log?).log | contains("pool-ETH.NONSENSE doesn't exist")
+  # TODO:  This is a failed withdraw PoolExist validation
+  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.124.0/x/thorchain/withdraw.go#L332-335 )
+  # but the handler_withdraw validation should check this much earlier at the same time as EnsureValidPoolStatus
+  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.124.0/x/thorchain/handler_withdraw.go#L79-81 )
+  # by using IsEmpty like handler_add_liquidity .
+  # ( https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/handler_add_liquidity.go#L269-270 )
+  # For handler_withdraw, a format without a hyphen ('pool-') to distinguish the withdraw.go and handler_withdraw errors.
+---
+########################################################################################
+# Withdraw half the USDC position as USDC
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "-:ETH.USDC:5000:ETH.USDC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.log? and .code != 0)] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1 # The outbound exists.
+  - .[]|.in_hash == "{{ native_txid 2 }}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=62476000000}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          amount: "${OUT_AMOUNT}"
+          decimals: 8
+      gas:
+        - asset: "ETH.ETH"
+          amount: "960000"
+      memo: "OUT:{{ native_txid 2 }}"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0 # The outbound was resolved.

@@ -1,0 +1,5 @@
+services:
+  solana:
+    image: solana-mocknet-2.3.8
+    build:
+      context: ./mocknet/solana

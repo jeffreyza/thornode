@@ -1,0 +1,87 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+---
+########################################################################################
+# enable tor anchors
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDX-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 0
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDY-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDZ-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 2
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DerivedDepthBasisPts
+value: 10000
+sequence: 3
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: MaxAnchorBlocks
+value: 4
+sequence: 4
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DERIVEDDEPTHBASISPTS == 10000
+  - ."TORANCHOR-ETH-USDX-0X9999999999999999999999999999999999999999" == 1
+  - ."TORANCHOR-ETH-USDY-0X9999999999999999999999999999999999999999" == 1
+  - ."TORANCHOR-ETH-USDZ-0X9999999999999999999999999999999999999999" == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 10000
+  - .balance_asset|tonumber == 299999999999
+  - .balance_rune|tonumber == 300001797948
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDX-0X9999999999999999999999999999999999999999
+asserts:
+  - .asset_tor_price == "99999999"
+---
+########################################################################################
+# pause chain and ensure asset tor price remains set
+########################################################################################
+type: tx-node-pause-chain
+signer: {{ addr_thor_dog }}
+value: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDX-0X9999999999999999999999999999999999999999
+asserts:
+  - .asset_tor_price == "99999999"

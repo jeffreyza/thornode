@@ -1,0 +1,289 @@
+########################################################################################
+## XMR outbounds get a 3x signing window (ExtendedOutboundSigningPeriodMultiplier)
+## before LackSigning reschedules them, while regular chains keep the 1x window.
+########################################################################################
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "3"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-xmr-split-vault-pool-state.yaml" }}
+---
+# Launch profile: XMR memoless outbounds stay disabled.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: ENABLEMEMOLESSOUTBOUND
+          value: "0"
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.SigningTransactionPeriod == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEMEMOLESSOUTBOUND == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:XMR.XMR:{{ addr_xmr_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 3
+  - .[]|select(.chain == "BTC")|.vault_pub_key == "{{ pubkey_cat }}"
+  - .[]|select(.chain == "XMR")|.height == 3
+  - .[]|select(.chain == "XMR")|.vault_pub_key == "{{ pubkey_dog }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+########################################################################################
+# BTC reschedules at 1x; check XMR visibility after every block of its 3x window
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 3
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 3
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 6
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 6
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 6
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 9
+  # still listed: pending-outbound queries honor the XMR 3x signing window
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 9
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  # one block short of 3x the signing period: XMR still waits
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 9
+  - .[]|select(.chain == "XMR")|.height == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+########################################################################################
+# at 3x the signing period the XMR outbound is rescheduled on the same monovault
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.height == 12
+  - .[]|select(.chain == "XMR")|.height == 12
+  - .[]|select(.chain == "XMR")|.vault_pub_key == "{{ pubkey_dog }}"
+  - .[]|select(.chain == "XMR")|.to_address == "{{ addr_xmr_cat }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .[]|select(.chain == "BTC")|.height == 15
+  - .[]|select(.chain == "XMR")|.height == 12
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  # LackSigning reschedules; it does not add slash points on its own
+  - .slash_points == 0
+---
+########################################################################################
+# the rescheduled outbounds still complete when observed
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: '{{ observe_txid 1 }}'
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "8257390"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid 2 }}"
+    block_height: 20
+    finalise_height: 20
+    observed_pub_key: {{ pubkey_cat }}
+  - tx:
+      id: '{{ observe_txid 2 }}'
+      chain: XMR
+      from_address: {{ addr_xmr_dog }}
+      to_address: {{ addr_xmr_cat }}
+      coins:
+        - amount: "82643902665"
+          asset: "XMR.XMR"
+      gas:
+        - amount: "5000"
+          asset: "XMR.XMR"
+      memo: "OUT:{{ native_txid 3 }}"
+    block_height: 20
+    finalise_height: 20
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+    xmr_tx_key: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .outbound|tonumber == 0

@@ -1,0 +1,209 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "9"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_frog }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_wolf }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
+    bank:
+      balances:
+        - address: {{ addr_thor_fish }}
+          coins:
+            - denom: rune
+              amount: "500000000000"
+        - address: {{ addr_thor_frog }}
+          coins:
+            - denom: rune
+              amount: "100000000"
+        - address: {{ addr_thor_wolf }}
+          coins:
+            - denom: rune
+              amount: "100000000"
+    thorchain:
+      bond_providers:
+        - node_address: {{ addr_thor_dog }}
+          node_operator_fee: "0"
+          providers:
+            - bond: "4500000000000"
+              bond_address: {{ addr_thor_dog }}
+            - bond: "500000000000"
+              bond_address: {{ addr_thor_fish }}
+            - bond: "0"
+              bond_address: {{ addr_thor_frog }}
+---
+type: create-blocks
+count: 1
+---
+###############################################################################
+# Test 1: Rebond from wolf to frog -> fail, wolf is not bonded
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_wolf }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "rebond:{{ addr_thor_dog }}:{{ addr_thor_fish }}:100000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_wolf }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("is not bonded with")
+---
+###############################################################################
+# Test 2: Rebond from fish to frog -> success
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "rebond:{{ addr_thor_dog }}:{{ addr_thor_frog }}:100000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers[] |
+    select(.bond == "400000000000" and .bond_address == "{{ addr_thor_fish }}")
+  - .bond_providers.providers[] |
+    select(.bond == "100000000000" and .bond_address == "{{ addr_thor_frog }}")
+  - .total_bond == "5000000000000"
+---
+###############################################################################
+# Test 3: Rebond from dog to frog -> fail, disabled by mimir
+###############################################################################
+type: tx-mimir
+key: HaltRebond
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTREBOND == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "rebond:{{ addr_thor_dog }}:{{ addr_thor_frog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+asserts:
+  - .result.value.sequence == "2"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("has been disabled by mimir")
+---
+# 2_000_000 rune deducted from total_bond, over every provider, on tx-mimir
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers[] |
+    select(.bond == "399999840000" and .bond_address == "{{ addr_thor_fish }}")
+  - .bond_providers.providers[] |
+    select(.bond == "99999960000" and .bond_address == "{{ addr_thor_frog }}")
+  - .total_bond == "4999998000000"
+---
+###############################################################################
+# Test 4: Rebond all from fish to frog -> success, fish account removed
+###############################################################################
+type: tx-mimir
+key: HaltRebond
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTREBOND == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "rebond:{{ addr_thor_dog }}:{{ addr_thor_frog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+asserts:
+  - .result.value.sequence == "3"
+---
+# 2_000_000 rune deducted from total_bond, over every provider, on tx-mimir
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .bond_providers.providers | length == 2
+  - .bond_providers.providers[] |
+    select(.bond == "499999600000" and .bond_address == "{{ addr_thor_frog }}")
+  - .total_bond == "4999996000000"
+---
+type: tx-deposit
+signer: {{ addr_thor_fish }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "rebond:{{ addr_thor_dog }}:{{ addr_thor_frog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+asserts:
+  - .result.value.sequence == "4"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.log|contains("is not bonded with {{ addr_thor_dog }}")

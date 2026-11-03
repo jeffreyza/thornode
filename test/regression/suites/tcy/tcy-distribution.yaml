@@ -1,0 +1,199 @@
+type: env
+key: BLOCKS_PER_YEAR
+value: "1825"
+---
+type: env
+key: MIN_TCY_FOR_TCY_STAKE_DISTRIBUTION
+value: "210000000000001"
+---
+type: env
+key: TCY_STAKE_DISTRIBUTION_HALT
+value: "0"
+---
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_tcy_stake }}
+          coins:
+            - amount: "${BAL_TCY_STAKE=21000000000000000}"
+              denom: rune
+            - amount: "20370000000000000"
+              denom: tcy
+        # Address has tcy but it's not stake
+        # so it will be send to claiming module
+        - address: {{ addr_thor_fox }}
+          coins:
+            - amount: "${BAL_FOX_TCY=630000000000000}"
+              denom: tcy
+            - amount: "${INIT_FOX_RUNE=1}"
+              denom: rune
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "0"
+            address: {{ addr_module_tcy_stake }}
+            pub_key: ~
+            sequence: "0"
+          name: tcy_stake
+          permissions: []
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "1"
+            address: {{ addr_module_tcy_claim }}
+            pub_key: ~
+            sequence: "0"
+          name: tcy_claim
+          permissions: []
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_goat }}
+          pub_key: null
+          account_number: "2"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_frog }}
+          pub_key: null
+          account_number: "3"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_wolf }}
+          pub_key: null
+          account_number: "4"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_pig }}
+          pub_key: null
+          account_number: "5"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fish }}
+          pub_key: null
+          account_number: "6"
+          sequence: "0"
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_fox }}
+          pub_key: null
+          account_number: "7"
+          sequence: "0"
+    thorchain:
+      tcy_stakers:
+        - address: {{ addr_thor_goat }}
+          amount: "${BAL_GOAT_TCY=1260000000000000}"
+        - address: {{ addr_thor_frog }}
+          amount: "${BAL_FROG_TCY=6300000000000000}"
+        - address: {{ addr_thor_wolf }}
+          amount: "${BAL_WOLF_TCY=2100000000000000}"
+        - address: {{ addr_thor_pig }}
+          amount: "${BAL_PIG_TCY=10500000000000000}"
+        # Less than MinTCYForTCYStakeDistribution so it doesn't receive rune
+        # and it's send to claiming module
+        - address: {{ addr_thor_fish }}
+          amount: "${BAL_FISH_TCY=210000000000000}"
+---
+type: create-blocks
+count: 4
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_TCY_STAKE}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_frog }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_FOX_TCY}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_FOX_RUNE}
+---
+#########################################################################################################
+# Distribute funds:                                                                                     #
+#   - Total TCY: 210,000,000.00000000 TCY (100%) / - Total TCYStake:         210,000,000.00000000  RUNE #
+#   - Goat:       12,600,000.00000000 TCY   (6%) / - Goat:           (210,000,000.00000000 * 0.06) RUNE #
+#   - Frog:       63,000,000.00000000 TCY  (30%) / - Frog:           (210,000,000.00000000 * 0.3)  RUNE #
+#   - Wolf:       21,000,000.00000000 TCY  (10%) / - Wolf:           (210,000,000.00000000 * 0.1)  RUNE #
+#   - Pig:       105,000,000.00000000 TCY  (50%) / - Pig:            (210,000,000.00000000 * 0.5)  RUNE #
+#   - Claiming:    8,400,000.00000000 TCY   (4%) / - Claiming:       (210,000,000.00000000 * 0.04) RUNE #
+#     - Fox -> Not staked (3%) + Fish -> Less than MinTCYForTCYStakeDistribution (1%) = Claiming (4%)   #
+#########################################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+asserts:
+  - .balances|length == 1
+  - .balances[0].denom == "tcy"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_GOAT_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_frog }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_FROG_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_WOLF_TCY}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_PIG_TCY}
+---
+# Fish and fox should not receive rune from distribution, instead claiming module should
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+asserts:
+  - .balances|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_FOX_TCY}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_FOX_RUNE}
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_FOX_TCY}+${BAL_FISH_TCY}

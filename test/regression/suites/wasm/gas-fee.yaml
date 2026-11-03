@@ -1,0 +1,65 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmMinGasPrice
+value: 1000000000000000 # 0.001 RUNE per gas unit
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "counter.wasm"
+gas: 2000000
+fees: 2000rune
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "counter-contract"
+sender: {{ addr_thor_dog }}
+gas: 100000
+fees: 100rune
+---
+type: create-blocks
+count: 1
+---
+type: tx-execute-contract
+sender: {{ addr_thor_dog }}
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg: { "increment": {}}
+gas: 100000
+fees: 100rune
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[2].amount == "100rune"
+  - .txs[0].result.events[2].recipient == "tthor17xpfvakm2amg962yls6f84z3kell8c5ljftt88"
+  - .txs[0].result.events[2].sender == "{{ addr_thor_dog }}"
+  - .txs[0].result.events[2].type == "transfer"
+  - .txs[0].result.events[4].fee == "100rune"
+  - .txs[0].result.events[4].fee_payer == "{{ addr_thor_dog }}"
+  - .txs[0].result.events[4].type == "tx"
+  - .txs[0].result.events[7].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
+  - .txs[0].result.events[8]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[9]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[9].new_value == "1"

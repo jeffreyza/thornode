@@ -1,0 +1,323 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+---
+########################################################################################
+# enable lending
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDX-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 0
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDY-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDZ-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 2
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DerivedDepthBasisPts
+value: 10000
+sequence: 3
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: MaxAnchorBlocks
+value: 4
+sequence: 4
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DERIVEDDEPTHBASISPTS == 10000
+  - ."TORANCHOR-ETH-USDX-0X9999999999999999999999999999999999999999" == 1
+  - ."TORANCHOR-ETH-USDY-0X9999999999999999999999999999999999999999" == 1
+  - ."TORANCHOR-ETH-USDZ-0X9999999999999999999999999999999999999999" == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 10000
+  - .balance_asset|tonumber == 299999999999
+  - .balance_rune|tonumber == 300001797948
+---
+# thor.tor should not be available in the pool querier
+type: check
+endpoint: http://localhost:1317/thorchain/pool/thor.tor
+status: 400
+asserts:
+  - .message|test("thor.tor is a derived asset")
+---
+# layer 1 assets should not be available in the dpool querier
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/btc.btc
+status: 400
+asserts:
+  - .message|test("asset is not a derived asset")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.btc
+asserts:
+  - .derived_depth_bps|tonumber == 10000
+---
+########################################################################################
+# swap to USDX should reduce depth
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000" # 5% depth
+    asset: "rune"
+memo: "=:ETH.USDX-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 8913
+  - .balance_asset|tonumber == 271778080233 # median still ~1:1
+  - .balance_rune|tonumber == 271779709043
+---
+########################################################################################
+# swap to USDY should reduce depth
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000" # 5% depth
+    asset: "rune"
+asset: "rune"
+memo: "=:ETH.USDY-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# keep swapping each block to sustain current slip
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000" # 5% depth
+    asset: "rune"
+asset: "rune"
+memo: "=:ETH.USDZ-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 7853
+  - .balance_asset|tonumber == 221540789479 # price shift with affected median
+  - .balance_rune|tonumber == 243316116886
+---
+########################################################################################
+# enable the dynamic anchor to target 95% and compute every block
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DynamicMaxAnchorCalcInterval
+value: 1
+sequence: 5
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DynamicMaxAnchorTarget
+value: 9500
+sequence: 6
+---
+type: create-blocks
+count: 1
+---
+# keep swapping each block to sustain current slip
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000" # 5% depth
+    asset: "rune"
+asset: "rune"
+memo: "=:ETH.USDX-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+---
+########################################################################################
+# depth should increase to ~95% (dynamic target) on dynamic anchor calc
+########################################################################################
+type: create-blocks
+count: 1
+---
+# keep swapping each block to sustain current slip
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000" # 5% depth
+    asset: "rune"
+asset: "rune"
+memo: "=:ETH.USDY-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 9500
+---
+########################################################################################
+# depth should increase back to 100% over the successive max anchor blocks
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 9507
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 9672
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 9837
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+asserts:
+  - .derived_depth_bps|tonumber == 10000
+---
+########################################################################################
+# clear outbounds to cleanup
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 5
+  - .[0].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
+  - .[1].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
+  - .[2].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
+  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=4094434200}"
+  - .[4].coin.amount == "${OUTPUT_AMOUNT_5=4094442900}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNTS}"
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -7 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNTS}"
+          asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -6 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNTS}"
+          asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -5 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_4}"
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -2 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUTPUT_AMOUNT_5}"
+          asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

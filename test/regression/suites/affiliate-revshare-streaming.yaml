@@ -1,0 +1,121 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# register thorname "t" owned by cat (RUNE-only payout — preferred_asset is ".")
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:t:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .preferred_asset == "."
+---
+########################################################################################
+# enable REVSHARE-t at 2500 bps (25%)
+########################################################################################
+type: tx-mimir
+key: REVSHARE-t
+value: 2500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Streaming swap: rune -> BTC with thorname "t" as the first affiliate.
+# 0/1/3 means limit=0, interval=1 block, count=3 sub-swaps. Per the design
+# spec each sub-swap must attribute its liquidity fee to the parent memo's
+# first affiliate, so the per-block accumulator picks up one entry per
+# sub-swap, drained at end-of-block by UpdateNetwork.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}:0/1/3:t:100"
+---
+########################################################################################
+# Block 1 of streaming: first sub-swap fires, attribution adds an entry to
+# the accumulator keyed by thorname "t", end-of-block drains it and emits
+# a single rev_share event.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").owner == "{{ addr_thor_cat }}"
+  - ..|select(.type?=="rev_share").bps == "2500"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+  # Round-half-up share check: payout = floor(accrued_fee * 2500/10000 + 0.5)
+  - ((..|select(.type?=="rev_share").accrued_fee | tonumber) * 2500 / 10000 | . + 0.5 | floor) == (..|select(.type?=="rev_share").payout | tonumber)
+---
+########################################################################################
+# Block 2 of streaming: second sub-swap fires; same per-block invariants.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").bps == "2500"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+---
+########################################################################################
+# Block 3 of streaming: third (final) sub-swap fires; same per-block invariants.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rev_share")] | length == 1
+  - ..|select(.type?=="rev_share").thorname == "T"
+  - ..|select(.type?=="rev_share").bps == "2500"
+  - (..|select(.type?=="rev_share").accrued_fee | tonumber) > 0
+  - (..|select(.type?=="rev_share").payout | tonumber) > 0
+---
+########################################################################################
+# Confirm the AffiliateCollector for the thorname owner accumulated payouts
+# from all three sub-swaps. (Exact value depends on per-sub-swap fee math;
+# the invariant we care about is "non-zero and grew across the streaming
+# window".)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/t
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - (.affiliate_collector_rune | tonumber) > 0
